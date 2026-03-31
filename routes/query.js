@@ -27,29 +27,38 @@ router.post('/', async (req, res) => {
     const { data, error } = await supabase.rpc('match_documents', {
       query_embedding: embedding,
       match_threshold: 0.3,
-      match_count: 3
+      match_count: 5
     });
     if (error) throw error;
     const t2 = Date.now();
 
-    const context = data.map(d => d.content).join('\n\n');
+    // Trim context so Gemini can finish the answer
+    const trimmed = (data || [])
+      .slice(0, 3)                       // top 3 chunks
+      .map(d => (d.content || '').slice(0, 2000)); // max ~2k chars each
+    const context = trimmed.join('\n\n');
 
-    // 3) Answer using Gemini with a token limit
-    const prompt = `You are a helpful assistant. Answer the question using only the context below. If the answer isn't in the context, say "I don't have that information."
+    // 3) Answer using Gemini with more tokens and safer extraction
+    const prompt = `You are a Stripe API expert. Answer the question using only the context below.
+Give a clear, step-by-step explanation where helpful.
+If the answer isn't in the context, say "I don't have that information."
 
 Context:
 ${context}
 
 Question: ${question}`;
 
-    const response = await chatModel.generateContent({
+    const result = await chatModel.generateContent({
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       generationConfig: {
-        maxOutputTokens: 256,
+        maxOutputTokens: 512,
         temperature: 0.3,
       },
     });
-    const answer = response.response.text();
+
+    const candidate = result.response.candidates?.[0];
+    const parts = candidate?.content?.parts || [];
+    const answer = parts.map(p => p.text || '').join('').trim();
     const t3 = Date.now();
 
     console.log('RAG TIMING (ms):', {
@@ -59,7 +68,7 @@ Question: ${question}`;
       total: t3 - t0,
     });
 
-    res.json({ answer, sources: data.map(d => d.metadata) });
+    res.json({ answer, sources: (data || []).map(d => d.metadata) });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });

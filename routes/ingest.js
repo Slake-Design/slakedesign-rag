@@ -10,6 +10,7 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SER
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const upload = multer({ storage: multer.memoryStorage() });
 
+// Simple word-based chunking
 function chunkText(text, size = 500) {
   const words = text.split(' ');
   const chunks = [];
@@ -38,11 +39,14 @@ router.post('/', upload.single('file'), async (req, res) => {
     }
 
     const chunks = chunkText(text);
-    const model = genAI.getGenerativeModel({ model: process.env.GEMINI_EMBEDDING_MODEL });
+    const embeddingModel = genAI.getGenerativeModel({ model: process.env.GEMINI_EMBEDDING_MODEL });
 
     let inserted = 0;
+    const t0 = Date.now();
+
+    // Sequential insert (safe for rate limits; can batch later if needed)
     for (const chunk of chunks) {
-      const result = await model.embedContent(chunk);
+      const result = await embeddingModel.embedContent(chunk);
       const embedding = result.embedding.values;
       await supabase.from('documents').insert({
         content: chunk,
@@ -51,6 +55,13 @@ router.post('/', upload.single('file'), async (req, res) => {
       });
       inserted++;
     }
+
+    const t1 = Date.now();
+    console.log('UPLOAD TIMING (ms):', {
+      chunks: inserted,
+      total: t1 - t0,
+      perChunk: inserted ? (t1 - t0) / inserted : 0,
+    });
 
     res.json({ success: true, chunks: inserted });
   } catch (err) {

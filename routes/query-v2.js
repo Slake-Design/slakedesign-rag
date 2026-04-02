@@ -4,19 +4,54 @@ const router = express.Router();
 const { createClient } = require('@supabase/supabase-js');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-// Initialize Supabase & Gemini
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// Optimization: Using Gemini 2.5 Flash for the best balance of speed and complex reasoning
 const chatModel = genAI.getGenerativeModel({ model: process.env.GEMINI_MODEL });
 const embeddingModel = genAI.getGenerativeModel({ model: process.env.GEMINI_EMBEDDING_MODEL });
 
+function withTimeout(promise, ms, label) {
+    return Promise.race([
+        promise,
+        new Promise((_, reject) =>
+            setTimeout(() => reject(new Error(`Timeout: ${label} exceeded ${ms}ms`)), ms)
+        )
+    ]);
+}
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function generateWithRetry(prompt, maxRetries = 3) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            const result = await withTimeout(
+                chatModel.generateContentStream(prompt),
+                12000,
+                'LLM stream initiation'
+            );
+            return result;
+        } catch (err) {
+            const is429 = err.message?.includes('429');
+            const isLast = attempt === maxRetries;
+
+            if (is429 && !isLast) {
+                const wait = attempt * 2000; // 2s, 4s, 6s
+                console.log(`[retry] 429 on attempt ${attempt}, waiting ${wait}ms`);
+                await sleep(wait);
+                continue;
+            }
+            throw err;
+        }
+    }
+}
+
 router.post('/', async (req, res) => {
-    // CRITICAL: Set SSE Headers for Streaming
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
 
     try {
         const { question } = req.body;
@@ -25,66 +60,79 @@ router.post('/', async (req, res) => {
             return res.end();
         }
 
-        // 1. Vector Search for Documentation Context
-        const embedRes = await embeddingModel.embedContent(question);
-        const { data: matches, error: matchError } = await supabase.rpc('match_documents', {
-            query_embedding: embedRes.embedding.values,
-            match_threshold: 0.25,
-            match_count: 8
-        });
+        const embedStart = Date.now();
+        const embedRes = await withTimeout(
+            embeddingModel.embedContent(question),
+            5000,
+            'embedding'
+        );
+        console.log(`embed: ${Date.now() - embedStart}ms`);
+
+        const supabaseStart = Date.now();
+        const { data: matches, error: matchError } = await withTimeout(
+            supabase.rpc('match_documents', {
+                query_embedding: embedRes.embedding.values,
+                match_threshold: 0.3,
+                match_count: 4
+            }),
+            6000,
+            'supabase vector search'
+        );
+        console.log(`supabase: ${Date.now() - supabaseStart}ms`);
 
         if (matchError) throw matchError;
-        const context = (matches || []).map(d => d.content).join('\n\n---\n\n');
 
-        // 2. The Strategic Architect Prompt
-        const prompt = `You are a Principal Solutions Architect at Slake Design. 
-Using the provided Stripe context, generate an authoritative, implementation-ready brief.
+        const context = (matches || [])
+            .map(d => d.content)
+            .join('\n---\n')
+            .slice(0, 1200);
 
-### TONE: 
-Decisive, professional, and business-focused. No conversational filler.
+        const prompt = `You are a Principal Solutions Architect at Slake Design. Be decisive and implementation-ready.
 
-### STRUCTURE:
 ## 1. Executive Strategy & Business Impact
-(Analyze the requirement. Specifically mention how this implementation prevents revenue leakage, reduces churn, or improves operational efficiency for leadership.)
-
----
+(How this prevents revenue leakage, reduces churn, improves operational efficiency.)
 
 ## 2. Technical Implementation Roadmap
-(Provide 8+ high-density steps for a Lead Engineer. Include patterns like Idempotency, Asynchronous Workers, and Signature Verification based on the context.)
-
----
+(8+ steps for a Lead Engineer. Include Idempotency, Async Workers, Signature Verification.)
 
 ## 3. Key Webhook Events & API Endpoints
-(List the precise events and endpoints found in the context. Format as: **Event Name**: [Action Required])
+(Precise events and endpoints. Format: **Event**: [Action Required])
 
----
+## 4. Ready-to-Sprint: Jira Ticket
+**Title**: [Title]
+**Acceptance Criteria**: (3-5 technical requirements.)
+**Risk Mitigation**: (One sentence.)
 
-## 4. Ready-to-Sprint: Jira Ticket Summary
-**Title**: [Strategic Title]
-**Acceptance Criteria**: (List 3-5 technical requirements based on the documentation.)
-**Risk Mitigation**: (One sentence on how this architecture prevents common integration failures.)
+Context:
+${context}
 
-Context: ${context}
 Question: ${question}`;
 
-        // 3. Execute Stream
-        const result = await chatModel.generateContentStream(prompt);
+        const llmStart = Date.now();
+        const result = await generateWithRetry(prompt);
+        console.log(`llm stream open: ${Date.now() - llmStart}ms`);
 
-        // Pipe chunks to the client as they are generated
         for await (const chunk of result.stream) {
             const chunkText = chunk.text();
-            res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
+            if (chunkText) {
+                res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
+            }
         }
 
-        // 4. Final Metadata Payload (Sources)
         const sources = (matches || []).map(m => m.metadata);
         res.write(`data: ${JSON.stringify({ sources })}\n\n`);
-
         res.end();
 
     } catch (err) {
-        console.error('Architecture Engine Error:', err);
-        res.write(`data: ${JSON.stringify({ error: "The architecture engine timed out. Please refresh and try again." })}\n\n`);
+        const isTimeout = err.message?.includes('Timeout');
+        const is429 = err.message?.includes('429');
+
+        let clientMsg = 'Architecture engine reset. Please retry.';
+        if (isTimeout) clientMsg = 'Engine reset. Refresh and retry.';
+        if (is429) clientMsg = 'Engine is warming up. Please retry in a moment.';
+
+        console.error('[query-v2 error]', err.message);
+        res.write(`data: ${JSON.stringify({ error: clientMsg })}\n\n`);
         res.end();
     }
 });

@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const rateLimit = require('express-rate-limit');
 const app = express();
 
 app.use(cors({
@@ -8,13 +9,17 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Main RAG endpoints
+const limiter = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: 5,
+    message: { error: 'Too many requests, please try again later.' }
+});
+
+app.use('/query', limiter);
+app.use('/query-v2', limiter);
+
 app.use('/ingest', require('./routes/ingest'));
-
-// Primary Production Route (now using the v2 "Assembler" logic)
 app.use('/query', require('./routes/query-v2'));
-
-// Legacy/Comparison Route
 app.use('/query-v1', require('./routes/query'));
 app.use('/query-v2', require('./routes/query-v2'));
 

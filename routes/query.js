@@ -11,6 +11,8 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const embeddingModel = genAI.getGenerativeModel({ model: process.env.GEMINI_EMBEDDING_MODEL });
 const chatModel = genAI.getGenerativeModel({ model: process.env.GEMINI_MODEL });
 
+router.get('/health', (req, res) => res.status(200).json({ status: 'ok' }));
+
 router.post('/', async (req, res) => {
   try {
     const { question } = req.body;

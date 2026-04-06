@@ -23,7 +23,7 @@ app.use('/query', require('./routes/query-v2'));
 app.use('/query-v1', require('./routes/query'));
 app.use('/query-v2', require('./routes/query-v2'));
 
-app.get('/health', (req, res) => res.json({ status: 'ok' }));
+app.get('/health', (req, res) => res.status(200).json({ status: 'ok' }));
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {

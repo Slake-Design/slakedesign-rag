@@ -47,6 +47,8 @@ async function generateWithRetry(prompt, maxRetries = 3) {
     }
 }
 
+router.get('/health', (req, res) => res.status(200).json({ status: 'ok' }));
+
 router.post('/', async (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');

@@ -1,7 +1,7 @@
 {
   "name": "slakedesign-rag",
   "version": "1.0.0",
-  "description": "",
+  "description": "Production RAG backend — Stripe API knowledge base. Node.js, Express, Supabase pgvector, Gemini embeddings.",
   "main": "index.js",
   "scripts": {
     "test": "vitest run"

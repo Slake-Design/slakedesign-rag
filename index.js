@@ -16,12 +16,9 @@ const limiter = rateLimit({
 });
 
 app.use('/query', limiter);
-app.use('/query-v2', limiter);
 
 app.use('/ingest', require('./routes/ingest'));
-app.use('/query', require('./routes/query-v2'));
-app.use('/query-v1', require('./routes/query'));
-app.use('/query-v2', require('./routes/query-v2'));
+app.use('/query', require('./routes/query'));
 
 app.get('/health', (req, res) => res.status(200).json({ status: 'ok' }));
 

@@ -1,104 +1,137 @@
 # Slake Design RAG Engine
 
-A production-grade Retrieval-Augmented Generation (RAG) API that ingests technical documentation and returns executive-level architecture briefs via a streaming AI query engine.
-
-**Live Demo:** [slakedesign.com/demo.html](https://slakedesign.com/demo.html)
+A production-grade Retrieval-Augmented Generation (RAG) API designed for ingesting technical documentation and serving structured, streamed responses via a high-performance Express server and the Google Gemini API.
 
 ---
 
-## What It Does
+## Architecture Overview
 
-Ask it a technical question about your SaaS stack and it returns a structured, implementation-ready brief in under 8 seconds — streamed in real time — including executive strategy, a technical roadmap, key API endpoints, and a Jira-ready ticket.
+The Slake Design RAG Engine implements a fast, deterministic, and cost-efficient pipeline to answer technical queries using semantic search over localized context.
 
----
-
-## Performance
-
-| Stage | Time |
-|---|---|
-| Vector Embedding | ~350ms |
-| Supabase Vector Search | ~560ms |
-| LLM Stream Open | ~480ms |
-| **Full Response** | **~7.5s** |
-
-Optimized from an initial 45s response time down to 7.5s through model selection, context trimming, prompt engineering, and retry logic.
-
----
-
-## Stack
-
-- **Runtime:** Node.js / Express
-- **Vector Database:** Supabase pgvector
-- **Embeddings:** Google Gemini Embedding Model
-- **LLM:** Google Gemini 2.5 Flash Lite
-- **Streaming:** Server-Sent Events (SSE)
-
----
-
-## Architecture
 ```
-User Query
-    ↓
-Gemini Embedding Model → Query Vector
-    ↓
-Supabase pgvector → Top 4 Matching Chunks
-    ↓
-Gemini 2.5 Flash Lite → Streamed Response
-    ↓
-Client (SSE)
+                  ┌────────────────┐
+                  │   User Query   │
+                  └───────┬────────┘
+                          │
+                          ▼
+            ┌────────────────────────────┐
+            │  Gemini Embedding Model    │
+            │     (text-embedding-004)   │
+            └─────────────┬──────────────┘
+                          │ (Query Vector)
+                          ▼
+            ┌────────────────────────────┐
+            │   Supabase Vector Database │
+            │      (match_documents)     │
+            └─────────────┬──────────────┘
+                          │ (Top Context Chunks)
+                          ▼
+            ┌────────────────────────────┐
+            │  Gemini Generative Model   │
+            │     (gemini-2.0-flash)     │
+            └─────────────┬──────────────┘
+                          │ (Streamed SSE)
+                          ▼
+                  ┌────────────────┐
+                  │  Client Stream │
+                  └────────────────┘
 ```
 
----
+### Key Engineering Decisions
 
-## Key Engineering Decisions
-
-- **match_count reduced 8→4** — cuts context size by 50%, meaningfully reduces TTFT
-- **Context capped at 1200 chars** — eliminates padding the LLM has to reason through before token 1
-- **Retry logic on 429** — silently retries up to 3x with exponential backoff before surfacing an error
-- **flushHeaders() on connection** — client sees response immediately, improves perceived speed
-- **Rate limited to 5 req/hr per IP** — protects API cost on public deployment
+- **Streaming Responses**: Uses Server-Sent Events (SSE) via Express to stream tokens back to the client in real-time, reducing perceived latency.
+- **Context Filtering**: Restricts matches using a similarity threshold (minimum `0.48`) and caps context to prevent prompt injection and keep model responses focused.
+- **Robust Ingestion**: Features modular scripts for crawling web documentation, reading local OpenAPI specifications, and processing uploaded documents (PDFs and text).
+- **Error Mitigation & Rate Limiting**: Built-in exponential backoff retry logic for Gemini API `429` errors and IP-based rate limiting to prevent abuse.
 
 ---
 
-## API
+## File Structure
 
-### POST /query
-```json
-{
-  "question": "Your technical question here"
-}
-```
-
-**Response:** Server-Sent Events stream
-```json
-{ "text": "streamed chunk..." }
-{ "sources": [{ "source": "https://..." }] }
-```
+- `/routes`
+  - `query.js` — Core query route executing embedding, vector search, prompt styling, and SSE stream generation.
+  - `ingest.js` — API endpoint supporting manual file uploads (text/PDF) and automatic database ingestion.
+- `index.js` — Express application entry point configuring middleware, CORS, rate limits, and server routes.
+- `scraper.js` — Utility script to scrape narrative documentation pages, chunk contents, embed, and store in database.
+- `ingest-stripe.js` — Utility script to parse OpenAPI definitions (such as `stripe-spec.json`), generate route/parameter summaries, and insert vector embeddings.
+- `ingest-stripe-guides.js` — Utility script for downloading, cleaning, and ingesting web guides.
 
 ---
 
-## Setup
+## Setup & Configuration
+
+### Prerequisites
+
+- Node.js (v18+)
+- Supabase database instance with `pgvector` enabled and `match_documents` RPC function defined.
+
+### 1. Install Dependencies
+
 ```bash
 npm install
 ```
 
-Create a `.env` file:
+### 2. Configure Environment Variables
+
+Create a `.env` file in the root directory:
+
 ```dotenv
-SUPABASE_URL=your_supabase_url
-SUPABASE_SERVICE_KEY=your_service_key
-GEMINI_API_KEY=your_gemini_key
-GEMINI_MODEL=gemini-2.5-flash-lite
-GEMINI_EMBEDDING_MODEL=your_embedding_model
 PORT=3001
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_KEY=your-supabase-service-role-key
+GEMINI_API_KEY=your-gemini-api-key
+GEMINI_MODEL=gemini-2.0-flash-exp
+GEMINI_EMBEDDING_MODEL=text-embedding-004
 ```
+
+### 3. Run Ingestion (Optional)
+
+To populate the database using the provided utility scripts, ensure your `.env` contains the required keys, and run:
+
+- **Web Documentation Ingest**:
+  ```bash
+  node scraper.js
+  ```
+- **OpenAPI Ingest**:
+  *(Note: Requires placeholded spec files, such as `stripe-spec.json`, in the root directory)*
+  ```bash
+  node ingest-stripe.js
+  ```
+- **Guides Ingest**:
+  ```bash
+  node ingest-stripe-guides.js
+  ```
+
+### 4. Start the Server
+
 ```bash
 node index.js
 ```
 
+The server will spin up and listen on the configured `PORT` (default `3001`).
+
 ---
 
-## Author
+## API Documentation
 
-Built by AJ — AI/Backend Engineer specializing in RAG pipelines and production AI integration.
+### POST `/query`
 
-[Upwork Profile](https://www.upwork.com/freelancers/~01ac8014d7d14d5aaf) · [slakedesign.com](https://slakedesign.com)
+Generates streamed, structured solutions to technical questions based on the ingested documentation.
+
+**Request Header:**
+`Content-Type: application/json`
+
+**Request Body:**
+```json
+{
+  "question": "How do I implement subscription webhook signatures?"
+}
+```
+
+**Response Format (text/event-stream):**
+```json
+data: {"text": "## 1. Executive Strategy..."}
+data: {"text": "..."}
+data: {"sources": [{"id": 12, "similarity": 0.89, "metadata": {"source": "https://docs.stripe.com/webhooks"}}]}
+data: {"done": true}
+```

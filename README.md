@@ -82,8 +82,8 @@ PORT=3001
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_KEY=your-supabase-service-role-key
 GEMINI_API_KEY=your-gemini-api-key
-GEMINI_MODEL=gemini-2.0-flash-exp
-GEMINI_EMBEDDING_MODEL=text-embedding-004
+GEMINI_MODEL=gemini-2.5-flash-lite
+GEMINI_EMBEDDING_MODEL=models/gemini-embedding-001
 ```
 
 ### 3. Run Ingestion (Optional)

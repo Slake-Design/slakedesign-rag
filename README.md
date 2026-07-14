@@ -1,5 +1,7 @@
 # Slake Design RAG Engine
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 A production-grade Retrieval-Augmented Generation (RAG) API designed for ingesting technical documentation and serving structured, streamed responses via a high-performance Express server and the Google Gemini API.
 
 ---
@@ -28,7 +30,7 @@ The Slake Design RAG Engine implements a fast, deterministic, and cost-efficient
                           ▼
             ┌────────────────────────────┐
             │  Gemini Generative Model   │
-            │     (gemini-2.0-flash)     │
+            │  (gemini-2.5-flash-lite)   │
             └─────────────┬──────────────┘
                           │ (Streamed SSE)
                           ▼
@@ -135,3 +137,14 @@ data: {"text": "..."}
 data: {"sources": [{"id": 12, "similarity": 0.89, "metadata": {"source": "https://docs.stripe.com/webhooks"}}]}
 data: {"done": true}
 ```
+
+---
+
+## Performance & Architecture Decisions
+
+This RAG pipeline is built around several deliberate latency-reducing design choices:
+
+1. **Lightweight Model Selection** — Uses `gemini-2.5-flash-lite`, chosen for fast, cost-efficient inference suited to context-grounded RAG tasks.
+2. **Server-Sent Events (SSE) Streaming** — Streams generated tokens to the client as they're produced rather than waiting for the full response, reducing perceived latency (time to first token).
+3. **Supabase pgvector Similarity Search** — Vector similarity search runs inside the database via the `match_documents` RPC function, avoiding in-memory document loading.
+4. **Context Capping & Filtering** — A similarity threshold of 0.48 and a context cap of 8000 characters limit what's passed to the model, reducing token load and processing time.

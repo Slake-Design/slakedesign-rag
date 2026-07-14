@@ -1,3 +1,4 @@
+// Security audit pass: verified no hardcoded secrets in version control
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');

@@ -3,28 +3,14 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const pdfParse = require('pdf-parse');
-const { createClient } = require('@supabase/supabase-js');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const documentRepository = require('../src/repositories/document.repository');
+const { embeddingModel } = require('../src/config/gemini');
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+});
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const upload = multer({ storage: multer.memoryStorage() });
-
-// Simple word-based chunking
-function chunkText(text, size = 500) {
-  const words = text.split(' ');
-  const chunks = [];
-  let current = [];
-  for (const word of words) {
-    current.push(word);
-    if (current.length >= size) {
-      chunks.push(current.join(' '));
-      current = [];
-    }
-  }
-  if (current.length) chunks.push(current.join(' '));
-  return chunks;
-}
+const Chunker = require('../src/ingestion/chunker');
 
 router.post('/', upload.single('file'), async (req, res) => {
   try {
@@ -38,8 +24,8 @@ router.post('/', upload.single('file'), async (req, res) => {
       text = req.file.buffer.toString('utf-8');
     }
 
-    const chunks = chunkText(text);
-    const embeddingModel = genAI.getGenerativeModel({ model: process.env.GEMINI_EMBEDDING_MODEL });
+    const chunks = Chunker.splitText(text, { chunkSize: 500, chunkOverlap: 50 });
+    // Using centralized embeddingModel
 
     let inserted = 0;
     const t0 = Date.now();
@@ -48,7 +34,7 @@ router.post('/', upload.single('file'), async (req, res) => {
     for (const chunk of chunks) {
       const result = await embeddingModel.embedContent(chunk);
       const embedding = result.embedding.values;
-      await supabase.from('documents').insert({
+      await documentRepository.insertDocument({
         content: chunk,
         embedding,
         metadata: { filename: req.file.originalname }
@@ -65,8 +51,11 @@ router.post('/', upload.single('file'), async (req, res) => {
 
     res.json({ success: true, chunks: inserted });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+    console.error('[Ingest Error]', err);
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ error: 'File size exceeds the 10MB limit.' });
+    }
+    res.status(500).json({ error: 'An error occurred during file ingestion.' });
   }
 });
 

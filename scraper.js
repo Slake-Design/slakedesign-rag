@@ -33,20 +33,7 @@ const STRIPE_URLS = [
   'https://docs.stripe.com/connect/payouts-bank-accounts'
 ];
 
-function chunkText(text, size = 300) {
-  const words = text.split(' ');
-  const chunks = [];
-  let current = [];
-  for (const word of words) {
-    current.push(word);
-    if (current.length >= size) {
-      chunks.push(current.join(' '));
-      current = [];
-    }
-  }
-  if (current.length) chunks.push(current.join(' '));
-  return chunks;
-}
+const Chunker = require('./src/ingestion/chunker');
 
 async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -86,7 +73,7 @@ async function scrapeAndIngest(url) {
       return 0;
     }
 
-    const chunks = chunkText(text);
+    const chunks = Chunker.splitText(text, { chunkSize: 300, chunkOverlap: 50 });
     console.log(`Found ${chunks.length} chunks`);
     const model = genAI.getGenerativeModel({ model: process.env.GEMINI_EMBEDDING_MODEL });
 

@@ -21,22 +21,7 @@ function stripHtml(html) {
         .trim();
 }
 
-function chunk(text, maxChars = 2000) {
-    const chunks = [];
-    let current = '';
-    for (const sentence of text.split('. ')) {
-        const s = sentence.trim();
-        if (!s) continue;
-        if ((current + s + '. ').length > maxChars) {
-            if (current) chunks.push(current.trim());
-            current = s + '. ';
-        } else {
-            current += s + '. ';
-        }
-    }
-    if (current) chunks.push(current.trim());
-    return chunks;
-}
+const Chunker = require('./src/ingestion/chunker');
 
 async function main() {
     for (const url of GUIDES) {
@@ -44,7 +29,7 @@ async function main() {
         const res = await fetch(url);
         const html = await res.text();
         const text = stripHtml(html);
-        const chunks = chunk(text, 2000);
+        const chunks = Chunker.splitText(text, { chunkSize: 400, chunkOverlap: 50 });
         console.log(`Got ${chunks.length} chunks from ${url}`);
 
         for (const c of chunks) {

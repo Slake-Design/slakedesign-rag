@@ -1,0 +1,34 @@
+[
+  {
+    "question": "How do I accept a payment using Payment Intents?",
+    "expected_source": "accept-a-payment"
+  },
+  {
+    "question": "How do I verify webhook signatures in my application?",
+    "expected_source": "webhooks"
+  },
+  {
+    "question": "What endpoint and parameters are used to create a PaymentIntent?",
+    "expected_source": "stripe-api"
+  },
+  {
+    "question": "How do I set up customer billing and subscriptions?",
+    "expected_source": "subscriptions/overview"
+  },
+  {
+    "question": "How do I refund a charge using Stripe API?",
+    "expected_source": "refunds"
+  },
+  {
+    "question": "What is the dispute lifecycle and how do I submit evidence?",
+    "expected_source": "disputes"
+  },
+  {
+    "question": "How do I handle bank account payouts in Stripe Connect?",
+    "expected_source": "payouts-bank-accounts"
+  },
+  {
+    "question": "What is Stripe Checkout and how do I create a checkout session?",
+    "expected_source": "checkout"
+  }
+]

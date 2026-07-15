@@ -2,31 +2,11 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
 import express from 'express';
 
-// Define the mock functions that we will control in our tests
-const mockRpc = vi.fn();
-const mockEmbedContent = vi.fn();
-const mockGenerateContentStream = vi.fn();
+// Load environment variables for configuration presence checks
+require('dotenv').config();
 
-// Overwrite the exports in the Node.js require cache BEFORE requiring the router
-const supabaseJS = require('@supabase/supabase-js');
-supabaseJS.createClient = vi.fn(() => ({
-    rpc: mockRpc,
-}));
-
-const googleGenerativeAI = require('@google/generative-ai');
-googleGenerativeAI.GoogleGenerativeAI = class {
-    constructor(apiKey) {
-        this.apiKey = apiKey;
-    }
-    getGenerativeModel(config) {
-        if (config && config.model && config.model.includes('embedding')) {
-            return { embedContent: mockEmbedContent };
-        }
-        return { generateContentStream: mockGenerateContentStream };
-    }
-};
-
-// Now require the router which will load the mutated cached modules
+// Import target service and router
+const { RagService, ragServiceInstance } = require('../src/services/rag.service');
 const app = express();
 app.use(express.json());
 const queryRouter = require('../routes/query');
@@ -41,13 +21,7 @@ async function* createMockStream(texts) {
     }
 }
 
-describe('POST /query route RAG pipeline', () => {
-    beforeEach(() => {
-        mockRpc.mockReset();
-        mockEmbedContent.mockReset();
-        mockGenerateContentStream.mockReset();
-    });
-
+describe('POST /query route (HTTP Transport)', () => {
     it('should validate missing or empty question parameters', async () => {
         const res = await request(app)
             .post('/query')
@@ -57,45 +31,96 @@ describe('POST /query route RAG pipeline', () => {
         expect(res.text).toContain('"error":"Question is required"');
     });
 
-    it('should filter similarity matches correctly (only keeping >= 0.48 sorted descending)', async () => {
-        // Mock embedding resolution
-        mockEmbedContent.mockResolvedValue({
-            embedding: { values: [0.1, 0.2] }
-        });
-
-        // Mock database matches
-        const mockMatches = [
-            { id: 1, content: 'High match content', similarity: 0.85, metadata: { source: 'docs-high' } },
-            { id: 2, content: 'Low match content', similarity: 0.35, metadata: { source: 'docs-low' } },
-            { id: 3, content: 'Mid match content', similarity: 0.60, metadata: { source: 'docs-mid' } },
-        ];
-        mockRpc.mockResolvedValue({ data: mockMatches, error: null });
-
-        // Mock LLM generation stream
-        mockGenerateContentStream.mockResolvedValue({
-            stream: createMockStream(['Mocked RAG response content'])
+    it('should establish SSE streaming connection and stream tokens', async () => {
+        // Spy and mock the singleton ragServiceInstance directly
+        const generateAnswerSpy = vi.spyOn(ragServiceInstance, 'generateAnswer');
+        generateAnswerSpy.mockImplementation(async (question, callbacks) => {
+            callbacks.onChunk({ text: 'Hello from mock stream' });
+            callbacks.onSources([{ id: 1, similarity: 0.88, metadata: { source: 'test' } }]);
         });
 
         const res = await request(app)
             .post('/query')
-            .send({ question: 'How do I accept a payment?' });
+            .send({ question: 'Test endpoint validation' });
 
         expect(res.status).toBe(200);
-        expect(res.text).toContain('Mocked RAG response content');
-
-        // Verify the sources data sent at the end of the SSE stream
+        expect(res.header['content-type']).toContain('text/event-stream');
+        expect(res.text).toContain('Hello from mock stream');
         expect(res.text).toContain('"sources"');
-        const lines = res.text.split('\n').filter(line => line.startsWith('data: '));
-        const sourcesLine = lines.find(line => line.includes('"sources"'));
-        expect(sourcesLine).toBeDefined();
+        expect(res.text).toContain('"done":true');
+        
+        generateAnswerSpy.mockRestore();
+    });
+});
 
-        const jsonStr = sourcesLine.replace('data: ', '').trim();
-        const data = JSON.parse(jsonStr);
-        expect(data.sources).toHaveLength(2);
-        expect(data.sources[0].id).toBe(1);
-        expect(data.sources[0].similarity).toBe(0.85);
-        expect(data.sources[1].id).toBe(3);
-        expect(data.sources[1].similarity).toBe(0.60);
+describe('RagService (Orchestrator Logic via Dependency Injection)', () => {
+    const mockMatchDocuments = vi.fn();
+    const mockInsertDocument = vi.fn();
+    const mockEmbedContent = vi.fn();
+    const mockGenerateContentStream = vi.fn();
+    const mockCountTokens = vi.fn();
+
+    // Plain mock objects passed to constructor
+    const mockRepo = {
+        matchDocuments: mockMatchDocuments,
+        insertDocument: mockInsertDocument
+    };
+
+    const mockGemini = {
+        embeddingModel: {
+            embedContent: mockEmbedContent
+        },
+        chatModel: {
+            generateContentStream: mockGenerateContentStream,
+            countTokens: mockCountTokens
+        }
+    };
+
+    // Instantiate service using dependency injection (DI)
+    const testService = new RagService(mockRepo, mockGemini);
+
+    beforeEach(() => {
+        mockMatchDocuments.mockReset();
+        mockEmbedContent.mockReset();
+        mockGenerateContentStream.mockReset();
+        mockCountTokens.mockReset();
+    });
+
+    it('should orchestrate retrieval, budgeting, and LLM generation successfully', async () => {
+        mockEmbedContent.mockResolvedValue({
+            embedding: { values: [0.1, 0.2] }
+        });
+
+        const mockMatches = [
+            { id: 1, content: 'High similarity chunk', similarity: 0.90, metadata: { source: 'docs-high' } },
+            { id: 2, content: 'Filtered out similarity chunk', similarity: 0.35, metadata: { source: 'docs-low' } },
+            { id: 3, content: 'Mid similarity chunk', similarity: 0.70, metadata: { source: 'docs-mid' } },
+        ];
+        mockMatchDocuments.mockResolvedValue(mockMatches);
+        
+        // Mock token counts (base tokens = 100, chunk 1 = 50, chunk 3 = 50)
+        mockCountTokens.mockResolvedValue({ totalTokens: 50 });
+        mockGenerateContentStream.mockResolvedValue({
+            stream: createMockStream(['Mocked generated RAG response'])
+        });
+
+        const chunks = [];
+        let returnedSources = null;
+
+        await testService.generateAnswer('How to make payments?', {
+            onChunk: (chunk) => chunks.push(chunk.text || chunk),
+            onSources: (sources) => { returnedSources = sources; }
+        });
+
+        // Verify embedding and retrieval were called
+        expect(mockEmbedContent).toHaveBeenCalledWith('How to make payments?');
+        expect(mockMatchDocuments).toHaveBeenCalledWith([0.1, 0.2], 0.48, 6);
+
+        // Verify outputs
+        expect(chunks.join('')).toBe('Mocked generated RAG response');
+        expect(returnedSources).toHaveLength(2); // Only matches above 0.48 similarity are kept
+        expect(returnedSources[0].id).toBe(1);
+        expect(returnedSources[1].id).toBe(3);
     });
 
     it('should retry on Gemini API 429 Rate Limit error and succeed', async () => {
@@ -103,12 +128,13 @@ describe('POST /query route RAG pipeline', () => {
             embedding: { values: [0.1, 0.2] }
         });
 
-        mockRpc.mockResolvedValue({
-            data: [{ id: 1, content: 'Match content', similarity: 0.85, metadata: { source: 'docs' } }],
-            error: null
-        });
+        mockMatchDocuments.mockResolvedValue([
+            { id: 1, content: 'Mock content', similarity: 0.85 }
+        ]);
 
-        // Mock generateContentStream to fail with 429 on first try, then succeed
+        mockCountTokens.mockResolvedValue({ totalTokens: 10 });
+
+        // Fail on first attempt with 429, then succeed on second attempt
         let callCount = 0;
         mockGenerateContentStream.mockImplementation(() => {
             callCount++;
@@ -122,13 +148,12 @@ describe('POST /query route RAG pipeline', () => {
             });
         });
 
-        // Using real timers: this will take ~2.4 seconds to execute backoff sleep
-        const res = await request(app)
-            .post('/query')
-            .send({ question: 'How to handle 429?' });
+        const chunks = [];
+        await testService.generateAnswer('Test 429 retry logic', {
+            onChunk: (chunk) => chunks.push(chunk.text || chunk)
+        });
 
-        expect(res.status).toBe(200);
-        expect(res.text).toContain('Success after retry');
         expect(callCount).toBe(2);
-    }, 10000); // Set timeout to 10 seconds to allow for 2.4s backoff sleep
+        expect(chunks.join('')).toBe('Success after retry');
+    }, 10000); // 10s timeout to allow for exponential sleep backoff
 });

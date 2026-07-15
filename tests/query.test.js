@@ -2,7 +2,12 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
 import express from 'express';
 
-// Load environment variables for configuration presence checks
+// Set dummy environment variables to prevent initialization checks from throwing during testing
+process.env.SUPABASE_URL = process.env.SUPABASE_URL || 'https://mock-supabase-url.supabase.co';
+process.env.SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || 'mock-supabase-key';
+process.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'mock-gemini-key';
+
+// Load local environment variables if present
 require('dotenv').config();
 
 // Import target service and router

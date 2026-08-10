@@ -29,7 +29,7 @@ This RAG engine resolves these issues by anchoring Gemini responses in verified 
 
 ## 2. Deployed Demo
 
-* **Live Demo**: [slakedesign.com/demo](https://slakedesign.com/demo)
+* **Live Demo**: [slakedesign.com/demo/rag](https://slakedesign.com/demo/rag)
 * **What to Test**:
   - *Grounded Queries*: Ask about PaymentIntent creation or webhook verification to see structured implementation steps and citations.
   - *Domain Filtering*: Ask an off-topic question (e.g. *"What is the distance to the moon?"*) to verify the built-in domain-classifier rejection handler.

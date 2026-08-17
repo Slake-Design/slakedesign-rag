@@ -3,8 +3,6 @@ import request from 'supertest';
 import express from 'express';
 
 // Set dummy environment variables to prevent initialization checks from throwing during testing
-process.env.SUPABASE_URL = process.env.SUPABASE_URL || 'https://mock-supabase-url.supabase.co';
-process.env.SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || 'mock-supabase-key';
 process.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'mock-gemini-key';
 
 // Load local environment variables if present
@@ -60,15 +58,13 @@ describe('POST /query route (HTTP Transport)', () => {
 
 describe('RagService (Orchestrator Logic via Dependency Injection)', () => {
     const mockMatchDocuments = vi.fn();
-    const mockInsertDocument = vi.fn();
     const mockEmbedContent = vi.fn();
     const mockGenerateContentStream = vi.fn();
     const mockCountTokens = vi.fn();
 
     // Plain mock objects passed to constructor
     const mockRepo = {
-        matchDocuments: mockMatchDocuments,
-        insertDocument: mockInsertDocument
+        matchDocuments: mockMatchDocuments
     };
 
     const mockGemini = {

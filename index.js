@@ -22,17 +22,16 @@ const limiter = rateLimit({
 
 app.use('/query', limiter);
 
-app.use('/ingest', require('./routes/ingest'));
 app.use('/query', require('./routes/query'));
 
 app.get('/health', (req, res) => res.status(200).json({ status: 'ok' }));
 
-// Global error handling middleware to sanitize responses and handle upload limits
+// Global error handling middleware to sanitize responses.
+// The four-parameter signature is load-bearing: Express identifies error-handling
+// middleware by arity, so dropping the unused `next` would silently demote this to
+// ordinary middleware and stop it catching anything.
 app.use((err, req, res, next) => {
     console.error('[Global Error]', err);
-    if (err.code === 'LIMIT_FILE_SIZE') {
-        return res.status(400).json({ error: 'File size exceeds the 10MB limit.' });
-    }
     res.status(500).json({ error: 'An unexpected server error occurred.' });
 });
 

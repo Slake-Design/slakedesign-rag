@@ -10,12 +10,12 @@ A portfolio-grade, production-style Retrieval-Augmented Generation (RAG) backend
 
 Designed for recruiters and engineering managers reviewing in 3-5 minutes:
 
-* **Hybrid RAG Pipeline**: Combines a PostgreSQL vector database (`pgvector` hosted on Supabase) for fast similarity searches with Google Gemini (`gemini-2.5-flash-lite`) to generate grounded, context-aware answers.
+* **Hybrid RAG Pipeline**: Combines an in-memory vector index (650 pre-embedded chunks in `src/data/documents.json`, cosine similarity) with Google Gemini (`gemini-2.5-flash-lite`) to generate grounded, context-aware answers. The corpus ships with the deploy, so the service has no external database dependency and no cold-start pause.
 * **Token-Aware Context Budgeting**: Integrates Gemini's native `model.countTokens()` API to dynamically fit complete matching chunks into a 3,000-token context window, preventing document truncation mid-sentence or mid-code-block.
 * **Objective Retrieval Evaluation**: Replaces subjective "vibe-testing" with a read-only evaluation framework (`evaluation/`) that measures retrieval hit rates and query latency against a pre-defined test dataset.
 * **Decoupled Service Architecture**: Separates Express HTTP/SSE transport controllers (`routes/`) from the core AI workflow (`src/services/rag.service.js`) and database operations (`src/repositories/`).
 * **Dependency-Injected Test Design**: Utilizes constructor-based injection in `RagService` to mock external database and LLM APIs cleanly, ensuring automated tests (`npm test`) run isolated and cost-free.
-* **Production-Style Safety Controls**: Implements IP-based rate limiting to prevent API budget drain, Multer payload caps (10MB) to mitigate OOM memory issues, and sanitised error outputs.
+* **Production-Style Safety Controls**: Implements IP-based rate limiting to prevent API budget drain and sanitised error outputs.
 
 ---
 
@@ -60,8 +60,8 @@ The codebase enforces strict separation of concerns, treating evaluation as a fi
                  │
                  ├── [src/config/gemini.js] (Centralized Gemini API configuration)
                  │
-                 └── [src/repositories/document.repository.js] (DB queries & RPCs)
-                       └── [src/config/supabase.js] (Centralized DB client)
+                 └── [src/repositories/document.repository.js] (In-memory vector search)
+                       └── [src/data/documents.json] (650 pre-embedded chunks)
 
                              ▲
                              │ (Runs read-only similarity tests)
@@ -70,11 +70,11 @@ The codebase enforces strict separation of concerns, treating evaluation as a fi
 ```
 
 ### Component Breakdown:
-* **`routes/`**: [query.js](file:///Users/aj/slakedesign-rag/routes/query.js) acts strictly as a transport layer handling Express validation, SSE headers, and write buffers. [ingest.js](file:///Users/aj/slakedesign-rag/routes/ingest.js) maps file uploads.
-* **`src/config/`**: Centralizes client setups. [gemini.js](file:///Users/aj/slakedesign-rag/src/config/gemini.js) manages generative model parameters and prompt configurations; [supabase.js](file:///Users/aj/slakedesign-rag/src/config/supabase.js) isolates database credentials.
+* **`routes/`**: [query.js](file:///Users/aj/slakedesign-rag/routes/query.js) acts strictly as a transport layer handling Express validation, SSE headers, and write buffers.
+* **`src/config/`**: Centralizes client setups. [gemini.js](file:///Users/aj/slakedesign-rag/src/config/gemini.js) manages generative model parameters and prompt configurations.
 * **`src/services/`**: [rag.service.js](file:///Users/aj/slakedesign-rag/src/services/rag.service.js) orchestrates embedding generation, vector matching, token budgeting, prompt construction, and LLM streaming.
-* **`src/repositories/`**: [document.repository.js](file:///Users/aj/slakedesign-rag/src/repositories/document.repository.js) abstracts SQL operations and similarity lookups away from the service layer.
-* **`evaluation/`**: Compiles retrieval metrics and quality measurements against the active database.
+* **`src/repositories/`**: [document.repository.js](file:///Users/aj/slakedesign-rag/src/repositories/document.repository.js) loads the pre-embedded corpus into memory once and performs cosine-similarity lookups, keeping retrieval away from the service layer.
+* **`evaluation/`**: Compiles retrieval metrics and quality measurements against the in-memory corpus.
 * **`tests/`**: [query.test.js](file:///Users/aj/slakedesign-rag/tests/query.test.js) and [chunker.test.js](file:///Users/aj/slakedesign-rag/tests/chunker.test.js) run unit/integration tests with mocked APIs.
 
 ---
@@ -90,7 +90,7 @@ User Question
 Generate Query Embedding (models/gemini-embedding-001)
     │
     ▼
-Supabase Vector Search (pgvector RPC match_documents)
+In-Memory Vector Search (cosine similarity over documents.json)
     │
     ▼
 Retrieve Top 6 Matches (Similarity Filter >= 0.48)
@@ -120,7 +120,7 @@ Stream Done Event (data: {"done": true})
 
 To measure search quality, the project includes an evaluation suite under `evaluation/` to calculate objective metrics:
 * **Dataset** ([stripe_questions.json](file:///Users/aj/slakedesign-rag/evaluation/stripe_questions.json)): A dataset of 8 realistic Stripe API questions mapped to their expected documentation sources.
-* **Evaluation Runner** ([evaluate.js](file:///Users/aj/slakedesign-rag/evaluation/evaluate.js)): Embeds test queries, retrieves matches via Supabase, and calculates performance metrics.
+* **Evaluation Runner** ([evaluate.js](file:///Users/aj/slakedesign-rag/evaluation/evaluate.js)): Embeds test queries, retrieves matches from the in-memory index, and calculates performance metrics.
 
 ### Baseline Performance Metrics
 Running `node evaluation/evaluate.js` on the current populated database reports the following baseline:
@@ -151,8 +151,6 @@ To demonstrate software engineering maturity, the project documents its trade-of
 Configure the following variables in your `.env` file (never commit actual values to version control):
 ```dotenv
 PORT=3001
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_KEY=your-supabase-service-role-key
 GEMINI_API_KEY=your-gemini-api-key
 GEMINI_MODEL=gemini-2.5-flash-lite
 GEMINI_EMBEDDING_MODEL=models/gemini-embedding-001
@@ -170,9 +168,30 @@ npm start
 # Run automated mocked tests
 npm test
 
-# Run read-only retrieval evaluation against Supabase
+# Run read-only retrieval evaluation against the in-memory index
 node evaluation/evaluate.js
 ```
+
+### Updating the Corpus
+Retrieval reads `src/data/documents.json`, which is committed and deployed with the code.
+Ingestion is therefore an offline step, not a runtime endpoint: the service loads the corpus
+into memory once at boot and never writes back, and the host filesystem is ephemeral, so an
+HTTP upload would be lost on the next deploy.
+
+```bash
+# Preview what would be ingested — makes no Gemini calls and writes nothing
+npm run ingest:dry -- --spec
+npm run ingest:dry -- --urls
+
+# Ingest for real (appends only; existing records are never modified)
+npm run ingest -- --spec
+npm run ingest -- --urls https://docs.stripe.com/webhooks
+npm run ingest -- --spec --limit 50
+```
+
+Runs are append-only and de-duplicated on exact chunk content, so re-running is safe and
+idempotent. The corpus file is written atomically. After a real run, commit
+`src/data/documents.json` to deploy the updated index.
 
 ### Local Endpoint Verification
 ```bash

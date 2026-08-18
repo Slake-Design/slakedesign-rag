@@ -158,3 +158,37 @@ describe('RagService (Orchestrator Logic via Dependency Injection)', () => {
         expect(chunks.join('')).toBe('Success after retry');
     }, 10000); // 10s timeout to allow for exponential sleep backoff
 });
+
+describe('Out-of-domain refusal detection', () => {
+    const { isDomainRefusal } = require('../src/services/rag.service');
+
+    const CURLY = 'I’m specialized in Stripe, payments, and payment engineering. I don’t have information on that topic.';
+    const STRAIGHT = "I'm specialized in Stripe, payments, and payment engineering. I don't have information on that topic.";
+
+    // The original check matched literal U+2019 apostrophes. A model emitting straight
+    // quotes failed it, and a missed refusal is not cosmetic: sources are attached only
+    // when the answer is NOT a refusal, so the page would show citations beside
+    // "I don't have information on that topic".
+    it('detects the refusal with typographic apostrophes', () => {
+        expect(isDomainRefusal(CURLY)).toBe(true);
+    });
+
+    it('detects the refusal with straight apostrophes', () => {
+        expect(isDomainRefusal(STRAIGHT)).toBe(true);
+    });
+
+    it('is unaffected by casing and whitespace', () => {
+        expect(isDomainRefusal(STRAIGHT.toUpperCase().replace(/ /g, '   '))).toBe(true);
+    });
+
+    it('does not flag a genuine grounded answer', () => {
+        expect(isDomainRefusal(
+            'To verify a Stripe webhook signature, use the official library and the endpoint secret.'
+        )).toBe(false);
+    });
+
+    it('handles empty and missing input', () => {
+        expect(isDomainRefusal('')).toBe(false);
+        expect(isDomainRefusal(undefined)).toBe(false);
+    });
+});

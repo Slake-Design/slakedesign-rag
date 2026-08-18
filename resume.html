@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Anish Amit Jhaveri - Resume</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    /* Reset & Page Dimensions (Precision restored for exactly 2 Pages) */
+    @page {
+      size: letter;
+      margin: 0.45in 0.4in 0.45in 0.4in;
+    }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      color: #334155; /* Slate 700 */
+      background-color: #ffffff;
+      line-height: 1.45;
+      margin: 0;
+      padding: 0;
+      font-size: 9.2pt;
+    }
+    
+    a {
+      color: #2563eb; /* Blue 600 */
+      text-decoration: none;
+      font-weight: 500;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+
+    /* Modern Split Header */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 2px solid #f1f5f9;
+      padding-bottom: 12px;
+      margin-bottom: 14px;
+    }
+    .header-left h1 {
+      font-size: 20pt;
+      font-weight: 700;
+      color: #0f172a; /* Slate 900 */
+      margin: 0 0 2px 0;
+      letter-spacing: -0.6px;
+    }
+    .header-left .subtitle {
+      font-size: 9.5pt;
+      font-weight: 600;
+      color: #2563eb; /* Accent Blue */
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin: 0;
+    }
+    .header-right {
+      text-align: right;
+      font-size: 8.5pt;
+      color: #475569; /* Slate 600 */
+      line-height: 1.45;
+    }
+    .header-right a {
+      color: #475569;
+      font-weight: 400;
+    }
+
+    /* Section Headings */
+    h2 {
+      font-size: 10pt;
+      font-weight: 600;
+      color: #0f172a;
+      border-bottom: 1.5px solid #e2e8f0;
+      margin: 18px 0 10px 0;
+      padding-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+
+    /* Summary */
+    .summary {
+      font-size: 9.2pt;
+      color: #334155;
+      text-align: justify;
+      margin-bottom: 12px;
+    }
+
+    /* Experience & Projects Entries */
+    .entry {
+      margin-bottom: 14px;
+      padding: 0 2px;
+    }
+    .entry-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-weight: 700;
+      font-size: 9.2pt;
+      color: #0f172a;
+    }
+    .entry-company {
+      color: #0f172a;
+    }
+    .entry-date {
+      font-weight: 500;
+      color: #64748b;
+      font-size: 8.5pt;
+    }
+    .entry-subheader {
+      font-style: italic;
+      font-weight: 500;
+      font-size: 8.8pt;
+      color: #475569;
+      margin-top: 1px;
+      margin-bottom: 5px;
+    }
+    
+    /* Bullets */
+    ul {
+      margin: 0 0 6px 0;
+      padding-left: 18px;
+    }
+    li {
+      margin-bottom: 3px;
+      color: #475569;
+      font-size: 8.8pt;
+    }
+    li strong {
+      color: #334155;
+      font-weight: 600;
+    }
+
+    /* Prior Experience List specific formatting */
+    .prior-list li {
+      margin-bottom: 4px;
+      font-size: 8.8pt;
+    }
+
+    /* Clean Tech Stack Grid Layout */
+    .skills-grid {
+      display: grid;
+      grid-template-columns: 180px 1fr;
+      row-gap: 8px;
+      column-gap: 16px;
+      padding: 0 2px;
+      margin-bottom: 10px;
+    }
+    .skills-category {
+      font-weight: 600;
+      color: #0f172a;
+      font-size: 8.8pt;
+    }
+    .skills-items {
+      color: #475569;
+      font-size: 8.8pt;
+    }
+
+    /* Print settings */
+    @media print {
+      body {
+        color: #1e293b;
+      }
+      h2 {
+        border-bottom-color: #cbd5e1;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <h1>ANISH AMIT JHAVERI</h1>
+      <div class="subtitle">Full-Stack Engineer</div>
+    </div>
+    <div class="header-right">
+      <div>Austin, TX &bull; (817) 371-0013</div>
+      <div><a href="mailto:aj.jhaveri@gmail.com">aj.jhaveri@gmail.com</a></div>
+      <div><a href="https://github.com/aj-jhaveri" target="_blank">github.com/aj-jhaveri</a></div>
+      <div><a href="https://linkedin.com/in/anishjhaveri360" target="_blank">linkedin.com/in/anishjhaveri360</a></div>
+    </div>
+  </div>
+
+  <!-- Summary -->
+  <div class="summary">
+    Full-Stack Engineer with extensive experience designing, building, and deploying web applications, server configurations, and database integrations. Evolved from a prior background in corporate accounting and compliance auditing into web development (Drupal/CMS) starting in 2009, establishing an independent software practice (AW Technologies) in 2010. Proficient in Node.js, JavaScript, and SQL databases, with recent team experience delivering TypeScript, NestJS, and React/Next.js features in shared monorepos. Focuses on local AI workflow layers, vector database search, and system integrations since 2025.
+  </div>
+
+  <!-- Skills -->
+  <h2>Technical Skills</h2>
+  <div class="skills-grid">
+    <div class="skills-category">Core Systems & Integration (10+ Years)</div>
+    <div class="skills-items">JavaScript (ES6+), Node.js, Express, Relational Databases & SQL (PostgreSQL, MySQL), Payment Gateways (Stripe, Authorize.Net), REST APIs, HTML5/CSS3</div>
+    
+    <div class="skills-category">Systems & DevOps</div>
+    <div class="skills-items">VPS Management (Linux), Web Servers (Nginx, Apache), SSL/DNS, Docker, GitHub Actions (CI/CD), Azure Container Apps</div>
+    
+    <div class="skills-category">Recent Frameworks & Languages</div>
+    <div class="skills-items">TypeScript, NestJS, React, Next.js, Prisma ORM (Database Migrations), Zod</div>
+    
+    <div class="skills-category">AI Engineering (Focused Since 2025)</div>
+    <div class="skills-items">Retrieval-Augmented Generation (RAG), Model Context Protocol (MCP), Vector Similarity Search (pgvector), Supabase, Google Gemini API, Prompt Isolation (systemInstruction), Token Counting</div>
+    
+    <div class="skills-category">Testing</div>
+    <div class="skills-items">Vitest, Jest, Supertest, Playwright</div>
+  </div>
+
+  <!-- Experience -->
+  <h2>Professional Experience</h2>
+
+  <div class="entry">
+    <div class="entry-header">
+      <span class="entry-company">SCOUTLOCAL &bull; Austin, TX</span>
+      <span class="entry-date">July 2025 – Dec 2025</span>
+    </div>
+    <div class="entry-subheader">Full-Stack Engineer (Contract)</div>
+    <ul>
+      <li><strong>Modern CI/CD & Testing</strong>: Built and maintained comprehensive unit, integration, and E2E testing suites (Vitest, Jest, Supertest, Playwright) integrated into automated GitHub Actions pipelines to validate code quality before deployment.</li>
+      <li><strong>Git & Monorepo Workflows</strong>: Participated in team code reviews, branch/PR strategies, and continuous integration workflows to ensure clean main-branch deployments.</li>
+      <li><strong>Performance Optimization</strong>: Reduced authentication middleware latency from 300ms to &lt;1ms by replacing repeated JWKS network lookups with local public-key verification caching.</li>
+      <li><strong>API Cost Control</strong>: Restructured Mapbox GL viewport integrations with debouncing and caching layers, cutting geographic API query costs by 80%.</li>
+      <li><strong>Data Integrity & DB Workflows</strong>: Resolved data-pipeline issues by restructuring Prisma database operations into atomic database transactions, preventing orphaned records.</li>
+      <li><strong>AI Integration</strong>: Contributed to semantic search systems using Azure OpenAI embeddings, PostgreSQL pgvector, and full-text indexes.</li>
+    </ul>
+  </div>
+
+  <div class="entry">
+    <div class="entry-header">
+      <span class="entry-company">AW TECHNOLOGIES (Slake Design) &bull; Austin, TX</span>
+      <span class="entry-date">2009 – Present</span>
+    </div>
+    <div class="entry-subheader">Software Engineer & Consultant</div>
+    <ul>
+      <li><strong>AI & Search Systems (2025 – Present)</strong>: Designed and built local/hybrid RAG search systems utilizing PostgreSQL pgvector, Gemini embeddings, and context-window token optimization layers.</li>
+      <li><strong>Server Administration & DevOps</strong>: Configured, deployed, and maintained Linux VPS hosting environments using Nginx and Apache web servers; managed DNS routing, SSL configurations, and hosting deployments.</li>
+      <li><strong>Full-Stack & Web Applications</strong>: Developed custom web applications, custom templates, and integrations for various content management systems (CMS) tailored to client business workflows.</li>
+      <li><strong>E-Commerce & Payment Pipelines</strong>: Engineered custom checkout flows, secure payment integrations (Stripe, PayPal, Authorize.Net), automated subscription billing loops, and various e-commerce platform integrations.</li>
+      <li><strong>Business Consulting & Strategy</strong>: Sold, scoped, and developed end-to-end internet applications and digital marketing strategies for small-to-medium business clients, increasing revenue and user engagement.</li>
+      <li><strong>Backend & DB Workflows</strong>: Managed SQL databases (PostgreSQL, MySQL), built REST APIs using Node.js and Express, and automated data workflows.</li>
+      <li><strong>Drupal/CMS (2009 – 2010)</strong>: Designed, built, and launched Drupal websites, custom themes, and e-commerce setups for local businesses and independent clients.</li>
+    </ul>
+  </div>
+
+  <!-- Projects -->
+  <h2>Selected AI Projects</h2>
+
+  <div class="entry">
+    <div class="entry-header">
+      <span class="entry-company">DEPLOYED RAG SEARCH ENGINE &bull; Node.js, Express, Supabase, pgvector, Gemini API</span>
+      <span class="entry-date"><a href="https://slakedesign.com/demo" target="_blank">slakedesign.com/demo</a> &bull; <a href="https://github.com/Slake-Design/slakedesign-rag" target="_blank">github.com/Slake-Design/slakedesign-rag</a></span>
+    </div>
+    <ul>
+      <li><strong>Token Budgeting</strong>: Implemented token-aware context management using Gemini's countTokens() API to dynamically prune chunks, keeping prompt sizes under 3,000 tokens while preserving complete sentences.</li>
+      <li><strong>Security & Grounding</strong>: Isolated instructions via Gemini's systemInstruction parameters to reject off-topic queries, and configured Multer upload limits (10MB) to mitigate OOM risks.</li>
+      <li><strong>Performance & Evaluation</strong>: Created a read-only retrieval evaluation suite measuring search latency (513.63 ms baseline) and hit rates (75.00% baseline).</li>
+    </ul>
+  </div>
+
+  <div class="entry">
+    <div class="entry-header">
+      <span class="entry-company">TYPE-SAFE MODEL CONTEXT PROTOCOL (MCP) SQLITE BRIDGE &bull; TypeScript, SQLite, Zod</span>
+      <span class="entry-date"><a href="https://github.com/aj-jhaveri/mcp-sqlite-bridge" target="_blank">github.com/aj-jhaveri/mcp-sqlite-bridge</a></span>
+    </div>
+    <ul>
+      <li><strong>Agent Self-Correction</strong>: Implemented custom error-formatting middleware that compiles raw Zod validation errors into flat, readable strings, allowing LLM clients to self-correct invalid inputs in the subsequent conversational turn.</li>
+      <li><strong>Security Guardrails</strong>: Prevented SQL injection attacks by strictly binding query parameters and implemented a configurable READ_ONLY safety boundary to restrict write access.</li>
+      <li><strong>Testing & CI</strong>: Implemented automated unit and integration test coverage using Vitest, run via continuous integration (CI) workflows on GitHub Actions.</li>
+    </ul>
+  </div>
+
+  <!-- Prior Experience -->
+  <h2>Prior Experience</h2>
+  <ul class="prior-list">
+    <li><strong>Green City Solar</strong> &bull; Accounting Manager (2009 – 2012) &bull; Managed day-to-day accounting operations while developing web properties, combining financial duties with online systems and internal tooling.</li>
+    <li><strong>Apple, OneWest Bank, Contracts</strong> &bull; Independent Contractor (2007 – 2010) &bull; Short-term projects covering financial analysis, retail finance audit automation, and corporate/partnership tax preparation.</li>
+    <li><strong>National Financial Partners</strong> &bull; Internal Controls Analyst (2008) &bull; Reviewed broker-dealer and insurance subsidiary processes for FINRA and Sarbanes-Oxley (SOX) compliance, documenting process flows and updating control narratives.</li>
+    <li><strong>Realtex Development Corporation</strong> &bull; Senior Construction Accountant (2007 – 2008) &bull; Set up entities in accounting systems, reconciled accounts, and prepared financial statements, draw packages, budgets, and forecasts.</li>
+    <li><strong>Vignette (OpenText)</strong> &bull; Financial Reporting Accountant (2007) &bull; Prepared SEC filings (Forms 10-Q, 8-K) and supporting schedules.</li>
+    <li><strong>KPMG LLP</strong> &bull; Assurance Associate (2006) &bull; Performed audit fieldwork for hedge funds, private equity funds, and public registrants.</li>
+    <li><strong>XTO Energy, Inc.</strong> &bull; Revenue Accounting Intern (2005) &bull; Reconciled production revenue allocations for overriding royalty interest owners.</li>
+    <li><strong>US General Services Administration</strong> &bull; Accounting Co-op (2004) &bull; Managed accounts receivable reversals and voucher packet approvals.</li>
+  </ul>
+
+  <!-- Education -->
+  <h2>Education</h2>
+  <div class="entry" style="margin-bottom: 0;">
+    <div class="entry-header">
+      <span class="entry-company">TEXAS CHRISTIAN UNIVERSITY &bull; Fort Worth, TX</span>
+    </div>
+    <div style="display: flex; justify-content: space-between; font-size: 9pt; color: #475569; margin-top: 2px; font-weight: 500;">
+      <span>Master of Accounting</span>
+    </div>
+    <div style="display: flex; justify-content: space-between; font-size: 9pt; color: #475569; margin-top: 2px; font-weight: 500;">
+      <span>B.B.A. in Finance & Accounting</span>
+    </div>
+  </div>
+
+</body>
+</html>

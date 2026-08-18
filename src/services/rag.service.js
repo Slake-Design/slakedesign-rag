@@ -41,6 +41,30 @@ async function generateWithRetry(chatModel, prompt, maxRetries = 4) {
  * 
  * Supports Dependency Injection (DI) for clean mock testing without cache hacking.
  */
+/**
+ * Detects the out-of-domain refusal defined in the system prompt.
+ *
+ * This previously matched two substrings containing typographic apostrophes. A model
+ * emitting a straight apostrophe instead failed the match, which is not cosmetic:
+ * sources are attached only when the answer is NOT a refusal, so a missed refusal
+ * ships citations alongside "I don't have information on that topic" — presenting a
+ * refusal as though it were grounded in retrieved documents.
+ *
+ * Apostrophe variants are normalised and matching is anchored on the two distinctive
+ * phrases rather than on exact punctuation.
+ */
+function isDomainRefusal(text) {
+    if (!text) return false;
+
+    const normalised = String(text)
+        .replace(/[\u2018\u2019\u02BC\u2032]/g, "'")
+        .replace(/\s+/g, ' ')
+        .toLowerCase();
+
+    return normalised.includes("i'm specialized in stripe")
+        && normalised.includes("don't have information on that topic");
+}
+
 class RagService {
     /**
      * Initializes RagService with repositories and model configurations.
@@ -162,8 +186,7 @@ Answer:
                 fullResponse += text;
                 if (onChunk) onChunk({ text });
 
-                if (fullResponse.includes('I’m specialized in Stripe') &&
-                    fullResponse.includes('don’t have information on that topic')) {
+                if (isDomainRefusal(fullResponse)) {
                     isRefusal = true;
                 }
             }
@@ -188,5 +211,6 @@ const ragServiceInstance = new RagService();
 
 module.exports = {
     RagService,
-    ragServiceInstance
+    ragServiceInstance,
+    isDomainRefusal
 };

@@ -17,6 +17,16 @@ Designed for recruiters and engineering managers reviewing in 3-5 minutes:
 * **Dependency-Injected Test Design**: Utilizes constructor-based injection in `RagService` to mock external database and LLM APIs cleanly, ensuring automated tests (`npm test`) run isolated and cost-free.
 * **Production-Style Safety Controls**: Implements IP-based rate limiting to prevent API budget drain and sanitised error outputs.
 
+### Public access policy
+
+`POST /query` is intentionally open to any origin (`Access-Control-Allow-Origin: *`). The
+endpoint is read-only: it performs retrieval and generation, stores nothing, mutates
+nothing, and holds no user data. It is called directly from the browser by the demo at
+slakedesign.com and by Netlify deploy previews, whose subdomains change per pull request,
+so an origin allowlist would break previews without reducing risk — CORS does not
+restrict server-side callers. The real control on abuse is the rate limit: **10 requests
+per hour per IP**, enforced by `express-rate-limit` in `index.js`.
+
 ---
 
 ## 1. Project Overview & Problem Solved

@@ -70,12 +70,12 @@ The codebase enforces strict separation of concerns, treating evaluation as a fi
 ```
 
 ### Component Breakdown:
-* **`routes/`**: [query.js](file:///Users/aj/slakedesign-rag/routes/query.js) acts strictly as a transport layer handling Express validation, SSE headers, and write buffers.
-* **`src/config/`**: Centralizes client setups. [gemini.js](file:///Users/aj/slakedesign-rag/src/config/gemini.js) manages generative model parameters and prompt configurations.
-* **`src/services/`**: [rag.service.js](file:///Users/aj/slakedesign-rag/src/services/rag.service.js) orchestrates embedding generation, vector matching, token budgeting, prompt construction, and LLM streaming.
-* **`src/repositories/`**: [document.repository.js](file:///Users/aj/slakedesign-rag/src/repositories/document.repository.js) loads the pre-embedded corpus into memory once and performs cosine-similarity lookups, keeping retrieval away from the service layer.
+* **`routes/`**: [query.js](routes/query.js) acts strictly as a transport layer handling Express validation, SSE headers, and write buffers.
+* **`src/config/`**: Centralizes client setups. [gemini.js](src/config/gemini.js) manages generative model parameters and prompt configurations.
+* **`src/services/`**: [rag.service.js](src/services/rag.service.js) orchestrates embedding generation, vector matching, token budgeting, prompt construction, and LLM streaming.
+* **`src/repositories/`**: [document.repository.js](src/repositories/document.repository.js) loads the pre-embedded corpus into memory once and performs cosine-similarity lookups, keeping retrieval away from the service layer.
 * **`evaluation/`**: Compiles retrieval metrics and quality measurements against the in-memory corpus.
-* **`tests/`**: [query.test.js](file:///Users/aj/slakedesign-rag/tests/query.test.js) and [chunker.test.js](file:///Users/aj/slakedesign-rag/tests/chunker.test.js) run unit/integration tests with mocked APIs.
+* **`tests/`**: [query.test.js](tests/query.test.js) and [chunker.test.js](tests/chunker.test.js) run unit/integration tests with mocked APIs.
 
 ---
 
@@ -119,15 +119,14 @@ Stream Done Event (data: {"done": true})
 ## 5. Retrieval Evaluation Framework
 
 To measure search quality, the project includes an evaluation suite under `evaluation/` to calculate objective metrics:
-* **Dataset** ([stripe_questions.json](file:///Users/aj/slakedesign-rag/evaluation/stripe_questions.json)): A dataset of 8 realistic Stripe API questions mapped to their expected documentation sources.
-* **Evaluation Runner** ([evaluate.js](file:///Users/aj/slakedesign-rag/evaluation/evaluate.js)): Embeds test queries, retrieves matches from the in-memory index, and calculates performance metrics.
+* **Dataset** ([stripe_questions.json](evaluation/stripe_questions.json)): A dataset of 8 realistic Stripe API questions mapped to their expected documentation sources.
+* **Evaluation Runner** ([evaluate.js](evaluation/evaluate.js)): Embeds test queries, retrieves matches from the in-memory index, and calculates performance metrics.
 
 ### Baseline Performance Metrics
-Running `node evaluation/evaluate.js` on the current populated database reports the following baseline:
-* **Retrieval Hit Rate**: **75.00%** (6/8 queries retrieved the correct target context).
-* **Average Similarity Latency**: **513.63 ms**.
-* **Average Chunks Returned**: **6.00**.
-* **Average Context Token Size**: **2766.75 tokens**.
+Evaluation on the included eight-question Stripe corpus: 75.00% retrieval hit
+rate (6/8), 6.00 average chunks fetched, and 2,766.75 average context tokens.
+Embedding latency is environment-dependent because evaluation makes live Gemini
+embedding requests; reproduce results with `node evaluation/evaluate.js`.
 
 ### Future Ingestion Strategy
 > [!NOTE]

@@ -2,7 +2,7 @@
 
 [![Node.js CI](https://github.com/Slake-Design/slakedesign-rag/actions/workflows/test.yml/badge.svg)](https://github.com/Slake-Design/slakedesign-rag/actions/workflows/test.yml)
 
-A portfolio-grade, production-style Retrieval-Augmented Generation (RAG) backend API designed to serve grounded, payment-systems integration documentation. The system provides real-time, streamed response chunks to developer questions by performing semantic similarity searches over Stripe API specifications and developer guides.
+A Retrieval-Augmented Generation (RAG) backend API that serves grounded, payment-systems integration documentation. The system provides streamed response chunks to developer questions by performing semantic similarity searches over Stripe API specifications and developer guides.
 
 ---
 

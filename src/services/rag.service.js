@@ -7,6 +7,43 @@ const MATCH_THRESHOLD = 0.48;
 const MATCH_COUNT = 6;
 const MAX_CONTEXT_TOKENS = parseInt(process.env.MAX_CONTEXT_TOKENS) || 3000;
 
+// ====================== REFUSAL DETECTION ======================
+/**
+ * Normalises only what this check needs: case, apostrophe style, and whitespace.
+ */
+const normaliseForRefusal = (text) => String(text ?? '')
+    .toLowerCase()
+    .replace(/[‘’ʼ′]/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+
+/**
+ * Two distinctive fragments derived from the canonical wording, so the check
+ * stays in step with REFUSAL_TEXT instead of repeating it. Boundary punctuation
+ * is trimmed from each fragment, which only widens what matches.
+ */
+const REFUSAL_WORDS = normaliseForRefusal(REFUSAL_TEXT).split(' ');
+const trimEdgePunctuation = (value) => value.replace(/^[.,;:]+|[.,;:]+$/g, '');
+const REFUSAL_FRAGMENTS = [
+    trimEdgePunctuation(REFUSAL_WORDS.slice(0, 4).join(' ')),
+    trimEdgePunctuation(REFUSAL_WORDS.slice(-5).join(' '))
+];
+
+/**
+ * Detects the out-of-domain refusal defined in the system prompt.
+ *
+ * An exact match on REFUSAL_TEXT failed as soon as the model emitted a straight
+ * apostrophe. That is not cosmetic: sources are attached only when the answer is
+ * NOT a refusal, so a missed refusal ships citations beside "I don't have
+ * information on that topic". Both fragments are required, so an answer that
+ * merely mentions Stripe is not classified as a refusal.
+ */
+function isDomainRefusal(text) {
+    const normalised = normaliseForRefusal(text);
+    if (!normalised) return false;
+    return REFUSAL_FRAGMENTS.every((fragment) => normalised.includes(fragment));
+}
+
 // ====================== UTILS ======================
 // The timer is cleared on both settle paths so a completed call leaves no
 // pending handle behind.
@@ -181,7 +218,7 @@ Answer:
                 fullResponse += text;
                 if (onChunk) onChunk({ text });
 
-                if (fullResponse.includes(REFUSAL_TEXT)) {
+                if (isDomainRefusal(fullResponse)) {
                     isRefusal = true;
                 }
             }
@@ -209,5 +246,6 @@ const ragServiceInstance = new RagService();
 
 module.exports = {
     RagService,
-    ragServiceInstance
+    ragServiceInstance,
+    isDomainRefusal
 };

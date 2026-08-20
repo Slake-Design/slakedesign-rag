@@ -323,6 +323,64 @@ describe('RagService (Orchestrator Logic via Dependency Injection)', () => {
         expect(chunks.join('')).toBe(REFUSAL_TEXT);
         expect(returnedSources).toBeNull();
     });
+
+    it('emits no sources when the refusal varies in apostrophe, casing and whitespace', async () => {
+        mockEmbedContent.mockResolvedValue({ embedding: { values: [0.1, 0.2] } });
+        mockMatchDocuments.mockResolvedValue([
+            { id: 1, content: 'Mock content', similarity: 0.85, metadata: { source: 'docs' } }
+        ]);
+        mockCountTokens.mockResolvedValue({ totalTokens: 10 });
+
+        // Same sentence, straight apostrophes, upper case, and newline/tab runs.
+        const variant = "I'M SPECIALIZED IN STRIPE, PAYMENTS,\n\nAND PAYMENT ENGINEERING."
+            + "\tI DON'T HAVE   INFORMATION ON THAT TOPIC.";
+        mockGenerateContentStream.mockResolvedValue({ stream: createMockStream([variant]) });
+
+        const chunks = [];
+        let returnedSources = null;
+
+        await testService.generateAnswer('Who won the NBA finals?', {
+            onChunk: (chunk) => chunks.push(chunk.text),
+            onSources: (sources) => { returnedSources = sources; }
+        });
+
+        // Text output is untouched; only source emission is suppressed.
+        expect(chunks.join('')).toBe(variant);
+        expect(returnedSources).toBeNull();
+    });
+
+    it('still emits sources for a grounded answer that merely mentions Stripe', async () => {
+        mockEmbedContent.mockResolvedValue({ embedding: { values: [0.1, 0.2] } });
+        mockMatchDocuments.mockResolvedValue([
+            { id: 7, content: 'Mock content', similarity: 0.85, metadata: { source: 'docs' } }
+        ]);
+        mockCountTokens.mockResolvedValue({ totalTokens: 10 });
+        mockGenerateContentStream.mockResolvedValue({
+            stream: createMockStream([
+                'To verify a Stripe webhook signature, use the endpoint secret. Stripe signs every event.'
+            ])
+        });
+
+        let returnedSources = null;
+
+        await testService.generateAnswer('How do I verify webhook signatures?', {
+            onChunk: () => {},
+            onSources: (sources) => { returnedSources = sources; }
+        });
+
+        expect(returnedSources).toHaveLength(1);
+        expect(returnedSources[0].id).toBe(7);
+    });
+});
+
+describe('isDomainRefusal', () => {
+    const { isDomainRefusal } = require('../src/services/rag.service');
+
+    it('returns false for empty and missing input', () => {
+        expect(isDomainRefusal('')).toBe(false);
+        expect(isDomainRefusal(undefined)).toBe(false);
+        expect(isDomainRefusal(null)).toBe(false);
+    });
 });
 
 

@@ -10,6 +10,7 @@ require('dotenv').config();
 
 // Import target service and router
 const { RagService, ragServiceInstance } = require('../src/services/rag.service');
+const { MAX_QUESTION_CHARS } = require('../src/config/limits');
 const app = express();
 app.use(express.json());
 const queryRouter = require('../routes/query');
@@ -53,6 +54,92 @@ describe('POST /query route (HTTP Transport)', () => {
         expect(res.text).toContain('"done":true');
         
         generateAnswerSpy.mockRestore();
+    });
+
+    it('rejects a non-string question without running the pipeline', async () => {
+        const spy = vi.spyOn(ragServiceInstance, 'generateAnswer');
+
+        const res = await request(app)
+            .post('/query')
+            .send({ question: 5 });
+
+        expect(res.status).toBe(200);
+        expect(res.text).toContain('"error":"Question must be text."');
+        expect(spy).not.toHaveBeenCalled();
+
+        spy.mockRestore();
+    });
+
+    it('rejects a question over the limit without running the pipeline', async () => {
+        const spy = vi.spyOn(ragServiceInstance, 'generateAnswer');
+
+        const res = await request(app)
+            .post('/query')
+            .send({ question: 'a'.repeat(MAX_QUESTION_CHARS + 1) });
+
+        expect(res.status).toBe(200);
+        expect(res.text).toContain(`Question must be ${MAX_QUESTION_CHARS} characters or fewer.`);
+        expect(spy).not.toHaveBeenCalled();
+
+        spy.mockRestore();
+    });
+
+    it('accepts a question of exactly the maximum length', async () => {
+        const spy = vi.spyOn(ragServiceInstance, 'generateAnswer');
+        spy.mockImplementation(async () => {});
+
+        const res = await request(app)
+            .post('/query')
+            .send({ question: 'a'.repeat(MAX_QUESTION_CHARS) });
+
+        expect(res.status).toBe(200);
+        expect(res.text).not.toContain('"error"');
+        expect(spy).toHaveBeenCalledTimes(1);
+
+        spy.mockRestore();
+    });
+
+    it('does not report an unclassified failure as a timeout', async () => {
+        const spy = vi.spyOn(ragServiceInstance, 'generateAnswer');
+        spy.mockRejectedValue(new Error('boom'));
+
+        const res = await request(app)
+            .post('/query')
+            .send({ question: 'anything' });
+
+        expect(res.status).toBe(200);
+        // The error event must arrive at all: writeHead() after flushHeaders()
+        // threw here, which dropped it entirely.
+        expect(res.text).toContain('"error":"The request could not be completed. Please try again."');
+        expect(res.text).not.toMatch(/timeout/i);
+
+        spy.mockRestore();
+    });
+
+    it('maps a Timeout: error to the timeout message', async () => {
+        const spy = vi.spyOn(ragServiceInstance, 'generateAnswer');
+        spy.mockRejectedValue(new Error('Timeout: Embedding'));
+
+        const res = await request(app)
+            .post('/query')
+            .send({ question: 'anything' });
+
+        expect(res.text).toContain('"error":"The retrieval service timed out. Please try again."');
+
+        spy.mockRestore();
+    });
+
+    it('maps a 429 error to the rate limit message', async () => {
+        const spy = vi.spyOn(ragServiceInstance, 'generateAnswer');
+        spy.mockRejectedValue(new Error('Resource exhausted (429)'));
+
+        const res = await request(app)
+            .post('/query')
+            .send({ question: 'anything' });
+
+        expect(res.text).toContain('"error":"Rate limit reached. Please retry shortly."');
+
+        spy.mockRestore();
     });
 });
 

@@ -12,6 +12,9 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "engines": {
+    "node": ">=22.12"
+  },
   "type": "commonjs",
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

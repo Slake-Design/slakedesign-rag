@@ -15,6 +15,10 @@ if (!process.env.GEMINI_API_KEY) {
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
+// Single source of truth: the prompt below emits this, and the stream refusal
+// check in rag.service.js matches against it.
+const REFUSAL_TEXT = 'I’m specialized in Stripe, payments, and payment engineering. I don’t have information on that topic.';
+
 const SYSTEM_PROMPT = `You are a Principal Solutions Architect at Slake Design — expert in Stripe, payments infrastructure, fintech, and payment systems engineering.
 
 <domain_classifier>
@@ -25,7 +29,7 @@ Classify silently as IN-DOMAIN or OUT-OF-DOMAIN.
 
 <rules>
 - If OUT-OF-DOMAIN: Output EXACTLY this and nothing more:
-  "I’m specialized in Stripe, payments, and payment engineering. I don’t have information on that topic."
+  "${REFUSAL_TEXT}"
 
 - If IN-DOMAIN: You MUST respond using the exact 4-section structure below. Do not add extra sections or deviate from the format.
 </rules>
@@ -71,5 +75,6 @@ const embeddingModel = genAI.getGenerativeModel({
 module.exports = {
     chatModel,
     embeddingModel,
-    SYSTEM_PROMPT // Exported for token counting or prompt reference if needed
+    SYSTEM_PROMPT, // Exported for token counting or prompt reference if needed
+    REFUSAL_TEXT
 };

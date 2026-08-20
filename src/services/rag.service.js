@@ -1,5 +1,6 @@
 const defaultRepository = require('../repositories/document.repository');
 const defaultGemini = require('../config/gemini');
+const { REFUSAL_TEXT } = defaultGemini;
 
 // Configuration constants
 const MATCH_THRESHOLD = 0.48;
@@ -7,26 +8,43 @@ const MATCH_COUNT = 6;
 const MAX_CONTEXT_TOKENS = parseInt(process.env.MAX_CONTEXT_TOKENS) || 3000;
 
 // ====================== UTILS ======================
-const withTimeout = (promise, ms, label) =>
-    Promise.race([
+// The timer is cleared on both settle paths so a completed call leaves no
+// pending handle behind.
+const withTimeout = (promise, ms, label) => {
+    let timer;
+    return Promise.race([
         promise,
-        new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout: ${label}`)), ms))
-    ]);
+        new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error(`Timeout: ${label}`)), ms);
+        })
+    ]).finally(() => clearTimeout(timer));
+};
 
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+// Resolves early if the signal aborts, so a cancelled request does not sit out
+// the remainder of a retry backoff.
+const sleep = (ms, signal) => new Promise(resolve => {
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener('abort', () => {
+        clearTimeout(timer);
+        resolve();
+    }, { once: true });
+});
 
-async function generateWithRetry(chatModel, prompt, maxRetries = 4) {
+async function generateWithRetry(chatModel, prompt, signal, maxRetries = 4) {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
             return await withTimeout(
-                chatModel.generateContentStream(prompt),
+                chatModel.generateContentStream(prompt, { signal }),
                 14000,
                 `LLM attempt ${attempt}`
             );
         } catch (err) {
+            if (signal?.aborted) throw err;
             const is429 = err.message?.includes('429') || err.status === 429;
             if (is429 && attempt < maxRetries) {
-                await sleep(attempt * 2400);
+                await sleep(attempt * 2400, signal);
+                // The wait ended because the caller aborted; start no new attempt.
+                if (signal?.aborted) throw err;
                 continue;
             }
             throw err;
@@ -62,12 +80,12 @@ class RagService {
      * @returns {Promise<void>}
      */
     async generateAnswer(question, callbacks = {}) {
-        const { onChunk, onSources } = callbacks;
+        const { onChunk, onSources, signal } = callbacks;
         const start = Date.now();
 
         // 1. Embedding creation
         const embedRes = await withTimeout(
-            this.embeddingModel.embedContent(question.trim()),
+            this.embeddingModel.embedContent(question.trim(), { signal }),
             6000,
             'Embedding'
         );
@@ -102,7 +120,7 @@ Answer:
         // Estimate base prompt tokens
         let baseTokens = 150;
         try {
-            const baseCount = await this.chatModel.countTokens(promptHeader + promptFooter);
+            const baseCount = await this.chatModel.countTokens(promptHeader + promptFooter, { signal });
             baseTokens = baseCount.totalTokens;
         } catch (e) {
             console.warn('[RAG] Failed to count base prompt tokens, using fallback:', e.message);
@@ -122,7 +140,7 @@ Answer:
         const chunkTokens = await Promise.all(
             chunkTexts.map(async (txt) => {
                 try {
-                    const count = await this.chatModel.countTokens(txt);
+                    const count = await this.chatModel.countTokens(txt, { signal });
                     return count.totalTokens;
                 } catch (e) {
                     return Math.ceil(txt.length / 4); // Fallback estimation
@@ -151,23 +169,26 @@ Answer:
         const prompt = `${promptHeader}${context || '[No relevant documents found]'}${promptFooter}`;
 
         // 4. Gemini Stream Generation
-        const result = await generateWithRetry(this.chatModel, prompt);
+        const result = await generateWithRetry(this.chatModel, prompt, signal);
 
         let fullResponse = '';
         let isRefusal = false;
 
         for await (const chunk of result.stream) {
+            if (signal?.aborted) break;
             const text = chunk.text();
             if (text) {
                 fullResponse += text;
                 if (onChunk) onChunk({ text });
 
-                if (fullResponse.includes('I’m specialized in Stripe') &&
-                    fullResponse.includes('don’t have information on that topic')) {
+                if (fullResponse.includes(REFUSAL_TEXT)) {
                     isRefusal = true;
                 }
             }
         }
+
+        // The caller is gone: emit no sources and claim no completion.
+        if (signal?.aborted) return;
 
         // Send sources ONLY for IN-DOMAIN responses
         if (!isRefusal && includedChunks.length > 0) {

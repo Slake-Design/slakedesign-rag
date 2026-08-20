@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';
 import express from 'express';
 
@@ -11,6 +11,7 @@ require('dotenv').config();
 // Import target service and router
 const { RagService, ragServiceInstance } = require('../src/services/rag.service');
 const { MAX_QUESTION_CHARS } = require('../src/config/limits');
+const { REFUSAL_TEXT } = require('../src/config/gemini');
 const app = express();
 app.use(express.json());
 const queryRouter = require('../routes/query');
@@ -201,7 +202,7 @@ describe('RagService (Orchestrator Logic via Dependency Injection)', () => {
         });
 
         // Verify embedding and retrieval were called
-        expect(mockEmbedContent).toHaveBeenCalledWith('How to make payments?');
+        expect(mockEmbedContent).toHaveBeenCalledWith('How to make payments?', { signal: undefined });
         expect(mockMatchDocuments).toHaveBeenCalledWith([0.1, 0.2], 0.48, 6);
 
         // Verify outputs
@@ -244,4 +245,139 @@ describe('RagService (Orchestrator Logic via Dependency Injection)', () => {
         expect(callCount).toBe(2);
         expect(chunks.join('')).toBe('Success after retry');
     }, 10000); // 10s timeout to allow for exponential sleep backoff
+
+    it('stops streaming and emits no sources once the caller aborts', async () => {
+        mockEmbedContent.mockResolvedValue({ embedding: { values: [0.1, 0.2] } });
+        mockMatchDocuments.mockResolvedValue([
+            { id: 1, content: 'Mock content', similarity: 0.85, metadata: { source: 'docs' } }
+        ]);
+        mockCountTokens.mockResolvedValue({ totalTokens: 10 });
+        mockGenerateContentStream.mockResolvedValue({
+            stream: createMockStream(['first', 'second', 'third'])
+        });
+
+        const controller = new AbortController();
+        const chunks = [];
+        let returnedSources = null;
+
+        await testService.generateAnswer('Abort after the first chunk', {
+            onChunk: (chunk) => {
+                chunks.push(chunk.text);
+                controller.abort();
+            },
+            onSources: (sources) => { returnedSources = sources; },
+            signal: controller.signal
+        });
+
+        expect(chunks).toEqual(['first']);
+        expect(returnedSources).toBeNull();
+    });
+
+    it('ends a retry backoff immediately on abort and starts no further attempt', async () => {
+        mockEmbedContent.mockResolvedValue({ embedding: { values: [0.1, 0.2] } });
+        mockMatchDocuments.mockResolvedValue([
+            { id: 1, content: 'Mock content', similarity: 0.85, metadata: {} }
+        ]);
+        mockCountTokens.mockResolvedValue({ totalTokens: 10 });
+
+        const controller = new AbortController();
+        let attempts = 0;
+        mockGenerateContentStream.mockImplementation(() => {
+            attempts++;
+            // Abort while the 2400ms backoff for this attempt is still pending.
+            setTimeout(() => controller.abort(), 10);
+            const err = new Error('Resource exhausted (429)');
+            err.status = 429;
+            throw err;
+        });
+
+        const startedAt = Date.now();
+        await expect(
+            testService.generateAnswer('Abort during backoff', { signal: controller.signal })
+        ).rejects.toThrow(/429/);
+        const elapsed = Date.now() - startedAt;
+
+        expect(attempts).toBe(1);
+        // A backoff served in full would take at least 2400ms.
+        expect(elapsed).toBeLessThan(2400);
+    });
+
+    it('emits no sources when the model returns the shared refusal text', async () => {
+        mockEmbedContent.mockResolvedValue({ embedding: { values: [0.1, 0.2] } });
+        mockMatchDocuments.mockResolvedValue([
+            { id: 1, content: 'Mock content', similarity: 0.85, metadata: { source: 'docs' } }
+        ]);
+        mockCountTokens.mockResolvedValue({ totalTokens: 10 });
+        mockGenerateContentStream.mockResolvedValue({
+            stream: createMockStream([REFUSAL_TEXT])
+        });
+
+        const chunks = [];
+        let returnedSources = null;
+
+        await testService.generateAnswer('Who won the NBA finals?', {
+            onChunk: (chunk) => chunks.push(chunk.text),
+            onSources: (sources) => { returnedSources = sources; }
+        });
+
+        expect(chunks.join('')).toBe(REFUSAL_TEXT);
+        expect(returnedSources).toBeNull();
+    });
+});
+
+
+describe('app configuration', () => {
+    const loadApp = () => {
+        delete require.cache[require.resolve('../index.js')];
+        return require('../index.js');
+    };
+
+    afterEach(() => {
+        delete process.env.TRUST_PROXY_HOPS;
+    });
+
+    it('defaults trust proxy to 0 when TRUST_PROXY_HOPS is unset', () => {
+        delete process.env.TRUST_PROXY_HOPS;
+        expect(loadApp().get('trust proxy')).toBe(0);
+    });
+
+    it('reflects the configured TRUST_PROXY_HOPS value', () => {
+        process.env.TRUST_PROXY_HOPS = '2';
+        expect(loadApp().get('trust proxy')).toBe(2);
+    });
+
+    it.each(['abc', '-1', '1.5', ''])(
+        'falls back to trust proxy 0 for the invalid value %j',
+        (value) => {
+            process.env.TRUST_PROXY_HOPS = value;
+            expect(loadApp().get('trust proxy')).toBe(0);
+        }
+    );
+});
+
+describe('rate limiter response', () => {
+    it('returns the documented JSON body once the limit is exceeded', async () => {
+        const rateLimit = require('express-rate-limit');
+        // The same frozen constant the production limiter is configured with.
+        const RATE_LIMIT_MESSAGE = require('../index.js').RATE_LIMIT_MESSAGE;
+
+        // A fresh limiter with its own store, so this never touches the
+        // production 1-hour window or shares state with another test.
+        const limitedApp = express();
+        limitedApp.use(express.json());
+        limitedApp.use('/query', rateLimit({
+            windowMs: 60 * 1000,
+            max: 2,
+            message: RATE_LIMIT_MESSAGE
+        }));
+        limitedApp.post('/query', (req, res) => res.json({ ok: true }));
+
+        expect((await request(limitedApp).post('/query').send({})).status).toBe(200);
+        expect((await request(limitedApp).post('/query').send({})).status).toBe(200);
+
+        const blocked = await request(limitedApp).post('/query').send({});
+
+        expect(blocked.status).toBe(429);
+        expect(blocked.body).toEqual(RATE_LIMIT_MESSAGE);
+    });
 });

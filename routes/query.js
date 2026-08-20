@@ -6,6 +6,14 @@ const { MAX_QUESTION_CHARS } = require('../src/config/limits');
 router.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 router.post('/', async (req, res) => {
+    const ac = new AbortController();
+
+    // res.end() in `finally` sets writableEnded before 'close' fires on a normal
+    // completion, so only an early close reaches abort().
+    res.on('close', () => {
+        if (!res.writableEnded) ac.abort();
+    });
+
     // Set up Server-Sent Events (SSE) stream headers
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -47,29 +55,36 @@ router.post('/', async (req, res) => {
         // Delegate query embedding, vector matching, token budgeting, and generation to RagService
         await ragServiceInstance.generateAnswer(question, {
             onChunk: (chunk) => send(chunk),
-            onSources: (sources) => send({ sources })
+            onSources: (sources) => send({ sources }),
+            signal: ac.signal
         });
 
         send({ done: true });
 
     } catch (err) {
-        console.error('[Query Route Error]', err);
-
-        // `Timeout:` is the prefix withTimeout produces. Anything else is
-        // unclassified and must not be given an invented cause.
-        const message = err.message ?? '';
-        let msg;
-        if (message.includes('429')) {
-            msg = 'Rate limit reached. Please retry shortly.';
-        } else if (message.startsWith('Timeout:')) {
-            msg = 'The retrieval service timed out. Please try again.';
+        // The caller disconnected: there is no one to receive an error event,
+        // and this is not a failure of the service.
+        if (ac.signal.aborted) {
+            console.log('[Query Route] client disconnected; generation aborted');
         } else {
-            msg = 'The request could not be completed. Please try again.';
-        }
+            console.error('[Query Route Error]', err);
 
-        // No writeHead here: flushHeaders() above already sent them, so it threw
-        // ERR_HTTP_HEADERS_SENT and this error event never ran.
-        send({ error: msg });
+            // `Timeout:` is the prefix withTimeout produces. Anything else is
+            // unclassified and must not be given an invented cause.
+            const message = err.message ?? '';
+            let msg;
+            if (message.includes('429')) {
+                msg = 'Rate limit reached. Please retry shortly.';
+            } else if (message.startsWith('Timeout:')) {
+                msg = 'The retrieval service timed out. Please try again.';
+            } else {
+                msg = 'The request could not be completed. Please try again.';
+            }
+
+            // No writeHead here: flushHeaders() above already sent them, so it
+            // threw ERR_HTTP_HEADERS_SENT and this error event never ran.
+            send({ error: msg });
+        }
     } finally {
         if (!res.writableEnded) res.end();
     }

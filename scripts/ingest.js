@@ -39,6 +39,9 @@ const Chunker = require('../src/ingestion/chunker');
 
 const DOCS_PATH = path.join(__dirname, '..', 'src', 'data', 'documents.json');
 
+// Mirrors the default in src/config/gemini.js, so the recorded id is the one actually used.
+const EMBEDDING_MODEL_ID = process.env.GEMINI_EMBEDDING_MODEL || 'models/gemini-embedding-001';
+
 // Preserved verbatim from the retired scraper.js so a re-run reproduces the same corpus.
 const STRIPE_DOC_URLS = [
     'https://docs.stripe.com/payments/accept-a-payment',
@@ -130,6 +133,34 @@ function saveCorpus(docs, docsPath = DOCS_PATH) {
     const tmpPath = `${docsPath}.tmp`;
     fs.writeFileSync(tmpPath, JSON.stringify(docs, null, 2));
     fs.renameSync(tmpPath, docsPath);
+}
+
+/**
+ * Records which model produced the vectors and how wide they are.
+ *
+ * The original corpus carried neither, so a change of embedding model silently
+ * degraded every similarity score. DocumentRepository refuses to boot without this
+ * file and enforces the dimension against the corpus.
+ */
+function saveMeta(docs, model, docsPath = DOCS_PATH) {
+    const sample = docs.find(doc => doc.embedding);
+    const vector = typeof sample?.embedding === 'string' ? JSON.parse(sample.embedding) : sample?.embedding;
+    if (!Array.isArray(vector)) {
+        throw new Error('Refusing to write corpus metadata: no usable embedding vector in the corpus.');
+    }
+
+    const metaPath = path.join(path.dirname(docsPath), 'corpus.meta.json');
+    const meta = {
+        dimensions: vector.length,
+        documentCount: docs.length,
+        embeddingModel: model,
+        embeddingModelVerified: true,
+        generatedAt: new Date().toISOString()
+    };
+    const tmpPath = `${metaPath}.tmp`;
+    fs.writeFileSync(tmpPath, `${JSON.stringify(meta, null, 2)}\n`);
+    fs.renameSync(tmpPath, metaPath);
+    return meta;
 }
 
 /**
@@ -290,9 +321,12 @@ async function main() {
         await sleep(EMBED_DELAY_MS);
     }
 
-    saveCorpus(corpus.concat(added));
-    console.log(`\nAdded ${added.length} documents. Corpus is now ${corpus.length + added.length}.`);
-    console.log('Commit src/data/documents.json to deploy the updated corpus.');
+    const updated = corpus.concat(added);
+    saveCorpus(updated);
+    const meta = saveMeta(updated, EMBEDDING_MODEL_ID);
+    console.log(`\nAdded ${added.length} documents. Corpus is now ${updated.length}.`);
+    console.log(`Recorded ${meta.dimensions}-d vectors from ${meta.embeddingModel}.`);
+    console.log('Commit src/data/documents.json and src/data/corpus.meta.json to deploy the updated corpus.');
 }
 
 // Only run when invoked directly, so the helpers above can be unit tested.
@@ -312,5 +346,6 @@ module.exports = {
     nextId,
     loadCorpus,
     saveCorpus,
+    saveMeta,
     STRIPE_DOC_URLS,
 };

@@ -11,6 +11,7 @@ const {
     nextId,
     loadCorpus,
     saveCorpus,
+    saveMeta,
     STRIPE_DOC_URLS,
 } = require('../scripts/ingest');
 
@@ -138,6 +139,24 @@ describe('ingest: corpus persistence', () => {
     it('refuses to load a file that is not a JSON array', () => {
         fs.writeFileSync(file, JSON.stringify({ not: 'an array' }));
         expect(() => loadCorpus(file)).toThrow(/not a JSON array/);
+    });
+
+    it('records the embedding model and dimension alongside the corpus', () => {
+        const docs = [{ id: 1, content: 'a', embedding: '[0.1,0.2,0.3]', metadata: {} }];
+        saveCorpus(docs, file);
+        const meta = saveMeta(docs, 'models/test-embedding-9', file);
+
+        const written = JSON.parse(fs.readFileSync(path.join(dir, 'corpus.meta.json'), 'utf8'));
+        expect(written.dimensions).toBe(3);
+        expect(written.documentCount).toBe(1);
+        expect(written.embeddingModel).toBe('models/test-embedding-9');
+        expect(written.embeddingModelVerified).toBe(true);
+        expect(meta.dimensions).toBe(3);
+    });
+
+    it('refuses to record metadata for a corpus with no usable vector', () => {
+        expect(() => saveMeta([{ id: 1, content: 'a', metadata: {} }], 'm', file))
+            .toThrow(/no usable embedding vector/);
     });
 
     it('leaves no temp file behind after an atomic write', () => {

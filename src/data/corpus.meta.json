@@ -1,0 +1,8 @@
+{
+  "dimensions": 3072,
+  "documentCount": 650,
+  "embeddingModel": null,
+  "embeddingModelVerified": false,
+  "generatedAt": null,
+  "note": "Legacy corpus. The embedding model that produced these vectors was not recorded at ingest time and cannot be recovered, so embeddingModel is null rather than guessed. dimensions is measured from the corpus and is the value the boot and query gates enforce. scripts/ingest.js records the real model id and dimension for every run from now on."
+}

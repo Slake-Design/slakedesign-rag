@@ -15,6 +15,30 @@ const TRUST_PROXY_HOPS = Number.isInteger(parsedTrustProxyHops) && parsedTrustPr
     : 0;
 app.set('trust proxy', TRUST_PROXY_HOPS);
 
+// ===================== TEMPORARY DIAGNOSTIC — REMOVE AFTER CALIBRATION =====================
+// TRUST_PROXY_HOPS cannot be chosen without observing the real forwarded chain, and the
+// chain is a property of the deployment, not of this code. This records it so the value is
+// measured rather than guessed.
+//
+// Runs before the limiter so rate-limited requests are captured too, and on every path so
+// /health -- which is unlimited and costs no Gemini call -- is enough to take a reading.
+//
+// This writes client IP addresses to the service log. Delete this block as soon as
+// TRUST_PROXY_HOPS is set; do not leave it running.
+app.use((req, res, next) => {
+    const rawXff = req.headers['x-forwarded-for'] || '';
+    const entries = String(rawXff).split(',').map(part => part.trim()).filter(Boolean);
+    console.log('[proxy-calibration] ' + JSON.stringify({
+        path: req.path,
+        xffRaw: rawXff,
+        xffEntries: entries.length,
+        resolvedIp: req.ip,
+        trustProxyHops: TRUST_PROXY_HOPS
+    }));
+    next();
+});
+// =========================== END TEMPORARY DIAGNOSTIC ======================================
+
 app.use(cors({
     origin: '*'
 }));
@@ -43,7 +67,16 @@ app.use('/query', limiter);
 
 app.use('/query', require('./routes/query'));
 
-app.get('/health', (req, res) => res.status(200).json({ status: 'ok' }));
+// TEMPORARY: xffEntries is a count-only calibration field -- a bare integer, never an
+// address and never the raw header. Remove it together with the diagnostic middleware
+// above as soon as TRUST_PROXY_HOPS is set.
+app.get('/health', (req, res) => res.status(200).json({
+    status: 'ok',
+    xffEntries: String(req.headers['x-forwarded-for'] || '')
+        .split(',')
+        .map(part => part.trim())
+        .filter(Boolean).length
+}));
 
 // Global error handling middleware to sanitize responses.
 // The four-parameter signature is load-bearing: Express identifies error-handling

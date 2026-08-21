@@ -23,34 +23,57 @@ function cosineSimilarity(vecA, vecB) {
  * Performs zero-downtime, in-memory vector similarity search over local document embeddings.
  * Eliminates external database dependencies and 7-day auto-pausing.
  */
+const DEFAULT_DATA_PATH = path.join(__dirname, '../data/documents.json');
+
 class DocumentRepository {
-    constructor() {
+    /**
+     * @param {string} [dataPath] - Corpus location. Overridable so the failure paths are testable.
+     */
+    constructor(dataPath = DEFAULT_DATA_PATH) {
+        this.dataPath = dataPath;
         this.documents = null;
         this.loadDocuments();
     }
 
+    /**
+     * Loads the corpus, or throws.
+     *
+     * A missing or unreadable corpus used to fall back to an empty array. The service
+     * then booted healthy, /health returned ok, and every query retrieved nothing --
+     * a total loss of function reported as success. Failing here instead kills the
+     * process before app.listen, which turns a bad corpus into a failed deploy.
+     */
     loadDocuments() {
         if (this.documents) return;
-        try {
-            const dataPath = path.join(__dirname, '../data/documents.json');
-            if (fs.existsSync(dataPath)) {
-                const raw = fs.readFileSync(dataPath, 'utf8');
-                const parsed = JSON.parse(raw);
-                this.documents = parsed.map(doc => ({
-                    id: doc.id,
-                    content: doc.content,
-                    metadata: doc.metadata || {},
-                    embedding: typeof doc.embedding === 'string' ? JSON.parse(doc.embedding) : doc.embedding
-                }));
-                console.log(`[DocumentRepository] Loaded ${this.documents.length} in-memory documents for zero-downtime vector search.`);
-            } else {
-                console.warn('[DocumentRepository] documents.json not found, fallback to empty set.');
-                this.documents = [];
-            }
-        } catch (err) {
-            console.error('[DocumentRepository Error] Failed to load documents.json:', err);
-            this.documents = [];
+
+        if (!fs.existsSync(this.dataPath)) {
+            throw new Error(`[DocumentRepository] Corpus not found at ${this.dataPath}. Refusing to start.`);
         }
+
+        let parsed;
+        try {
+            parsed = JSON.parse(fs.readFileSync(this.dataPath, 'utf8'));
+        } catch (err) {
+            throw new Error(`[DocumentRepository] Corpus at ${this.dataPath} is not readable JSON: ${err.message}`);
+        }
+
+        if (!Array.isArray(parsed)) {
+            throw new Error(`[DocumentRepository] Corpus at ${this.dataPath} must be a JSON array.`);
+        }
+
+        const documents = parsed.map(doc => ({
+            id: doc.id,
+            content: doc.content,
+            metadata: doc.metadata || {},
+            embedding: typeof doc.embedding === 'string' ? JSON.parse(doc.embedding) : doc.embedding
+        }));
+
+        if (documents.length === 0) {
+            throw new Error(`[DocumentRepository] Corpus at ${this.dataPath} is empty. Refusing to start: every query would retrieve nothing.`);
+        }
+
+        this.documents = documents;
+        console.log(`[DocumentRepository] Loaded ${this.documents.length} in-memory documents for zero-downtime vector search.`);
     }
 
     /**
@@ -87,3 +110,4 @@ class DocumentRepository {
 }
 
 module.exports = new DocumentRepository();
+module.exports.DocumentRepository = DocumentRepository;

@@ -22,8 +22,13 @@ app.use(express.json());
 
 // PUBLIC PORTFOLIO DEMO RATE LIMIT:
 // This is a public demo backend. To protect against paid Gemini API credit abuse and potential DoS
-// cost spikes, the rate limit is set to 10 requests per hour per IP. This balances recruiter usability
-// (allowing comfortable testing of RAG & domain controls) with API budget protection.
+// cost spikes, the limit is 10 requests per hour. This balances recruiter usability (allowing
+// comfortable testing of RAG & domain controls) with API budget protection.
+//
+// Per-IP is the intent, not yet the observed behaviour. The key is req.ip, which depends on the
+// trust-proxy hop count above; that is still at its safe default of 0, so behind a proxy every
+// caller currently shares one bucket. Calibration is pending on measuring the real
+// X-Forwarded-For chain length in the deployment. Do not guess the number.
 const RATE_LIMIT_MESSAGE = Object.freeze({
     error: 'Rate limit exceeded. To protect API budgets, this demo allows up to 10 questions per hour.'
 });

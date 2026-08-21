@@ -454,6 +454,21 @@ describe('app configuration', () => {
         expect(res.status).toBe(200);
         expect(res.body).toEqual({ status: 'ok' });
     });
+
+    // /query/health sits inside the rate-limited /query mount, so without the skip
+    // predicate an operational probe spent a visitor's 10/hour quota. Exercised against
+    // the real app and its real limiter, not a copy: well past the limit of 10.
+    it('does not charge /query/health against the query rate limit', async () => {
+        delete process.env.TRUST_PROXY_HOPS;
+        const configured = loadApp();
+
+        const statuses = [];
+        for (let i = 0; i < 12; i++) {
+            statuses.push((await request(configured).get('/query/health')).status);
+        }
+
+        expect(statuses).toEqual(Array(12).fill(200));
+    });
 });
 
 describe('rate limiter response', () => {

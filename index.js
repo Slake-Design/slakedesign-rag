@@ -53,7 +53,13 @@ const RATE_LIMIT_MESSAGE = Object.freeze({
 const limiter = rateLimit({
     windowMs: 60 * 60 * 1000, // 1 hour
     max: 10,
-    message: RATE_LIMIT_MESSAGE
+    message: RATE_LIMIT_MESSAGE,
+    // /query/health is an operational probe, not a demo query, but it sits inside this
+    // mount -- so every health check was spending a visitor's quota. Exempted rather
+    // than deleted: Render's configured Health Check Path is not in version control, so
+    // removing the route could fail deploys. req.path is mount-relative here, meaning
+    // '/health' for /query/health and '/' for the query endpoint itself.
+    skip: (req) => req.path === '/health'
 });
 
 app.use('/query', limiter);

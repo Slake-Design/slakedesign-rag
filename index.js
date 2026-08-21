@@ -7,37 +7,31 @@ const app = express();
 
 // Numeric hop count, never `true`: express-rate-limit rejects `true` outright
 // because it lets any caller forge X-Forwarded-For and bypass the limit. Only a
-// non-negative integer is honoured; anything else falls back to 0, so a typo
-// cannot silently widen or invalidate the trust setting.
-const parsedTrustProxyHops = Number(process.env.TRUST_PROXY_HOPS);
+// non-negative integer is honoured; anything else falls back to the calibrated
+// default, so a typo cannot silently widen or invalidate the trust setting.
+//
+// Measured 2026-08-21 against the deployed service: five plain requests to /health,
+// sending no X-Forwarded-For of their own, each reported a 2-entry chain (Cloudflare
+// then the Render load balancer). A control confirmed the mechanism -- forging one
+// entry produced 3, forging two produced 4 -- so the infrastructure contributes
+// exactly 2 and client-supplied entries only extend the untrusted left-hand end.
+// Express counts from the right, so req.ip lands on the real client at hop 2 and a
+// forged header cannot move it.
+//
+// The committed default is the measured value rather than 0 so an unset environment
+// variable yields correct keying instead of one shared bucket. The cost of that
+// choice: if the deployment topology ever changes, this number over-trusts the chain
+// until it is re-measured. Re-measure before assuming it still holds.
+const CALIBRATED_TRUST_PROXY_HOPS = 2;
+// An empty or blank variable counts as unset. Number('') is 0, which is a valid
+// non-negative integer, so without this an operator who sets TRUST_PROXY_HOPS= in the
+// dashboard would silently reinstate the shared-bucket bug this calibration removed.
+const rawTrustProxyHops = String(process.env.TRUST_PROXY_HOPS ?? '').trim();
+const parsedTrustProxyHops = rawTrustProxyHops === '' ? NaN : Number(rawTrustProxyHops);
 const TRUST_PROXY_HOPS = Number.isInteger(parsedTrustProxyHops) && parsedTrustProxyHops >= 0
     ? parsedTrustProxyHops
-    : 0;
+    : CALIBRATED_TRUST_PROXY_HOPS;
 app.set('trust proxy', TRUST_PROXY_HOPS);
-
-// ===================== TEMPORARY DIAGNOSTIC — REMOVE AFTER CALIBRATION =====================
-// TRUST_PROXY_HOPS cannot be chosen without observing the real forwarded chain, and the
-// chain is a property of the deployment, not of this code. This records it so the value is
-// measured rather than guessed.
-//
-// Runs before the limiter so rate-limited requests are captured too, and on every path so
-// /health -- which is unlimited and costs no Gemini call -- is enough to take a reading.
-//
-// This writes client IP addresses to the service log. Delete this block as soon as
-// TRUST_PROXY_HOPS is set; do not leave it running.
-app.use((req, res, next) => {
-    const rawXff = req.headers['x-forwarded-for'] || '';
-    const entries = String(rawXff).split(',').map(part => part.trim()).filter(Boolean);
-    console.log('[proxy-calibration] ' + JSON.stringify({
-        path: req.path,
-        xffRaw: rawXff,
-        xffEntries: entries.length,
-        resolvedIp: req.ip,
-        trustProxyHops: TRUST_PROXY_HOPS
-    }));
-    next();
-});
-// =========================== END TEMPORARY DIAGNOSTIC ======================================
 
 app.use(cors({
     origin: '*'
@@ -46,13 +40,12 @@ app.use(express.json());
 
 // PUBLIC PORTFOLIO DEMO RATE LIMIT:
 // This is a public demo backend. To protect against paid Gemini API credit abuse and potential DoS
-// cost spikes, the limit is 10 requests per hour. This balances recruiter usability (allowing
-// comfortable testing of RAG & domain controls) with API budget protection.
+// cost spikes, the limit is 10 requests per hour per IP. This balances recruiter usability
+// (allowing comfortable testing of RAG & domain controls) with API budget protection.
 //
-// Per-IP is the intent, not yet the observed behaviour. The key is req.ip, which depends on the
-// trust-proxy hop count above; that is still at its safe default of 0, so behind a proxy every
-// caller currently shares one bucket. Calibration is pending on measuring the real
-// X-Forwarded-For chain length in the deployment. Do not guess the number.
+// Per-IP is real as of the 2026-08-21 calibration above: the key is req.ip, which now resolves
+// through 2 trusted proxy hops to the client rather than to the load balancer. Before that it
+// resolved to the proxy, so every visitor shared one bucket.
 const RATE_LIMIT_MESSAGE = Object.freeze({
     error: 'Rate limit exceeded. To protect API budgets, this demo allows up to 10 questions per hour.'
 });
@@ -67,16 +60,7 @@ app.use('/query', limiter);
 
 app.use('/query', require('./routes/query'));
 
-// TEMPORARY: xffEntries is a count-only calibration field -- a bare integer, never an
-// address and never the raw header. Remove it together with the diagnostic middleware
-// above as soon as TRUST_PROXY_HOPS is set.
-app.get('/health', (req, res) => res.status(200).json({
-    status: 'ok',
-    xffEntries: String(req.headers['x-forwarded-for'] || '')
-        .split(',')
-        .map(part => part.trim())
-        .filter(Boolean).length
-}));
+app.get('/health', (req, res) => res.status(200).json({ status: 'ok' }));
 
 // Global error handling middleware to sanitize responses.
 // The four-parameter signature is load-bearing: Express identifies error-handling

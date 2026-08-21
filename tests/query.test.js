@@ -394,23 +394,66 @@ describe('app configuration', () => {
         delete process.env.TRUST_PROXY_HOPS;
     });
 
-    it('defaults trust proxy to 0 when TRUST_PROXY_HOPS is unset', () => {
+    // 2, measured 2026-08-21 against the deployment: Cloudflare then the Render load
+    // balancer. An unset variable must yield this rather than 0, because 0 keyed every
+    // visitor into one shared rate-limit bucket.
+    const CALIBRATED_HOPS = 2;
+
+    it('defaults trust proxy to the calibrated hop count when TRUST_PROXY_HOPS is unset', () => {
         delete process.env.TRUST_PROXY_HOPS;
-        expect(loadApp().get('trust proxy')).toBe(0);
+        expect(loadApp().get('trust proxy')).toBe(CALIBRATED_HOPS);
     });
 
-    it('reflects the configured TRUST_PROXY_HOPS value', () => {
-        process.env.TRUST_PROXY_HOPS = '2';
-        expect(loadApp().get('trust proxy')).toBe(2);
+    it('reflects an explicitly configured TRUST_PROXY_HOPS value', () => {
+        process.env.TRUST_PROXY_HOPS = '3';
+        expect(loadApp().get('trust proxy')).toBe(3);
     });
 
-    it.each(['abc', '-1', '1.5', ''])(
-        'falls back to trust proxy 0 for the invalid value %j',
+    it.each(['abc', '-1', '1.5', '', '   '])(
+        'falls back to the calibrated hop count for the invalid value %j',
         (value) => {
             process.env.TRUST_PROXY_HOPS = value;
-            expect(loadApp().get('trust proxy')).toBe(0);
+            expect(loadApp().get('trust proxy')).toBe(CALIBRATED_HOPS);
         }
     );
+
+    // The point of the calibration: req.ip must be the visitor, not the proxy, or the
+    // rate limiter counts everyone into one bucket.
+    it('resolves req.ip to the real client through the calibrated hop count', async () => {
+        delete process.env.TRUST_PROXY_HOPS;
+        const configured = loadApp();
+        configured.get('/__probe_client', (req, res) => res.json({ ip: req.ip }));
+
+        // The chain the deployment produces: client, then Cloudflare. The socket peer
+        // stands in for the Render load balancer.
+        const res = await request(configured)
+            .get('/__probe_client')
+            .set('X-Forwarded-For', '203.0.113.7, 198.51.100.1');
+
+        expect(res.body.ip).toBe('203.0.113.7');
+    });
+
+    it('ignores X-Forwarded-For entries a client prepends to forge an identity', async () => {
+        delete process.env.TRUST_PROXY_HOPS;
+        const configured = loadApp();
+        configured.get('/__probe_forged', (req, res) => res.json({ ip: req.ip }));
+
+        // Express counts from the trusted right-hand end, so a forged left-hand entry
+        // cannot shift which address is selected.
+        const res = await request(configured)
+            .get('/__probe_forged')
+            .set('X-Forwarded-For', '9.9.9.9, 203.0.113.7, 198.51.100.1');
+
+        expect(res.body.ip).toBe('203.0.113.7');
+    });
+
+    it('serves /health with no calibration field left on it', async () => {
+        delete process.env.TRUST_PROXY_HOPS;
+        const res = await request(loadApp()).get('/health');
+
+        expect(res.status).toBe(200);
+        expect(res.body).toEqual({ status: 'ok' });
+    });
 });
 
 describe('rate limiter response', () => {

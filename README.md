@@ -48,7 +48,7 @@ This RAG engine resolves these issues by anchoring Gemini responses in verified 
   - *"What endpoint and parameters are used to create a PaymentIntent?"*
 * **RAG Capabilities Demonstrated**:
   - **Semantic Retrieval**: Fetches relevant context matching the question's intent.
-  - **Grounded Responses**: Restricts generation strictly to the retrieved facts.
+  - **Grounded Responses**: Generation is prompted over the retrieved context, and citations are returned only for answers that used it.
   - **Incremental Streaming**: Renders response chunks as they generate using SSE.
   - **Verifiable Citations**: Returns database IDs, URLs, and similarity scores.
 
@@ -151,6 +151,7 @@ To demonstrate software engineering maturity, the project documents its trade-of
 * **Retrieval Experiments**: Retrieval accuracy (currently 75%) could be optimized in the future by running comparative evaluation runs with the new recursive chunker (`src/ingestion/chunker.js`) or adding a BM25 keyword search layer.
 * **In-Memory Rate Limiting**: The IP-based rate limiting is held in Node.js process memory. While appropriate for a single-instance portfolio demo, a production environment with multiple auto-scaling containers would require a distributed key store like Redis.
 * **Production Observability**: An enterprise deployment would require integrating transaction tracing, request tracking, and detailed token usage logging.
+* **Grounding is not yet enforced in code**: if no chunk clears the similarity threshold, the model is still called with a `[No relevant documents found]` placeholder (`src/services/rag.service.js`). Because the system prompt requires the full four-section structure for any in-domain question, the model can answer a payments question from its own priors. Citations are suppressed in that case, so an ungrounded answer is visually indistinguishable from a grounded one. This is a real correctness gap, not a styling issue, and it is being closed.
 
 ---
 

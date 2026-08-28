@@ -212,6 +212,65 @@ realistic leaked URL is scrubbed.
 
 ---
 
+## Production rollout
+
+Deployed 2026-08-28. See [DEPLOYMENT.md](DEPLOYMENT.md) for the runbook.
+
+**What shipped:** the grounding gate (P1), the TypeScript port with Zod (P5),
+structured logging with correlation IDs (P4), and the threshold recalibration
+(P7).
+
+**Two deploys failed before one succeeded**, and both were caused by this work:
+
+1. `Cannot find module '/opt/render/project/src/index.js'` — the P5 port
+   replaced `index.js` with `dist/index.js`, but Render's start command was
+   still `node index.js` and its build command was `npm install`, which never
+   ran `tsc`. This repo had never needed a build step before.
+2. `Missing: @emnapi/runtime@1.11.3 from lock file` — `npm ci` under Render's
+   default npm rejects an optional transitive of `@napi-rs/wasm-runtime`. The
+   fix was the same npm pin `.github/workflows/test.yml` already applied, which
+   should have been carried into the deploy config at the same time.
+
+Neither reached users. Render kept the previous version live through both, and
+the service never served a broken build. That is the failure mode working as
+intended, but the deploy configuration was part of the blast radius of the
+TypeScript port and was not enumerated with it. **A change to `main` and
+`start` is a change to the deploy contract, and the hosting configuration
+belongs in the blast-radius count alongside the call sites.**
+
+**The defect was live until this deploy.** Before the swap, production answered
+`"zxqv plorbnat weffle grimsby"` with a full four-section briefing on webhook
+signature verification — confident, structured, and built from model priors.
+That is what the threshold recalibration fixed, and it was reproducible against
+the live service right up to the moment it shipped.
+
+**One rollout trap worth recording:** the deploy reported `live` while the old
+instance was still draining, so the first smoke test passed against the *old*
+code and appeared to show the deploy had done nothing. Render runs both briefly.
+Verify with a signal only the new build emits — `x-correlation-id` here — rather
+than trusting the deploy status.
+
+**Post-deploy verification:** six queries against the live service. Both README
+showcase questions and both realistic payments questions answered with sources
+(2–4 each); two noise queries hit the code-level gate. Production logs confirm
+it:
+
+```json
+{"correlationId":"f5008f4a-…","outcome":"refused_ungrounded","durationMs":295,
+ "retrievedChunks":0,"includedChunks":0,"threshold":0.62,
+ "cause":"nothing_above_threshold","msg":"Refused ungrounded answer; model was not called"}
+```
+
+**What to monitor.** The ratio of `outcome=refused_ungrounded` to
+`outcome=answered` is the number that matters. It was ~0 before this deploy
+because the gate never fired. A sustained rise means the threshold is now too
+high for real traffic, or corpus coverage has a gap — either way it is a
+retrieval problem, not a model problem, and `npm run calibrate` is the first
+thing to run. `outcome=out_of_domain_refusal` should stay rare now that the code
+gate catches noise before the classifier sees it.
+
+---
+
 ## Method
 
 The grounding gate was written as a failing test first, run against the unfixed

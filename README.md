@@ -174,6 +174,40 @@ with `CORPUS_PATH`.
 
 ---
 
+## 5b-ii. Retrieval Threshold Calibration
+
+`MATCH_THRESHOLD` decides whether a question is answered or refused, so it is
+measured rather than guessed. Measured 2026-08-28 against
+`gemini-embedding-001` (3072-d) over the committed 650-document corpus, top-1
+cosine similarity:
+
+| Population | n | Range |
+|---|---|---|
+| In-domain (`evaluation/stripe_questions.json`) | 8 | 0.706 – 0.816 |
+| Noise (gibberish + off-topic) | 6 | 0.473 – 0.555 |
+
+Separation gap: **0.151**. The configured value is **0.62** — slightly below the
+exact midpoint of 0.631, biasing margin toward retaining real questions, since
+wrongly refusing a genuine payments question is a worse demo failure than
+admitting a borderline one. Verified: **0/6 noise admitted, 0/8 in-domain
+refused**.
+
+**Why this mattered.** The previous value was `0.48`, which sat *below* the
+noise band: 5 of 6 noise queries cleared it, including the literal string
+`"zxqv plorbnat weffle grimsby"` at 0.544. The grounding gate was therefore
+correct but almost never reached — the system prompt's domain classifier was
+doing the real work. That is the prompt-as-guardrail pattern the gate exists to
+replace. At 0.62 the code-level gate fires first and the classifier is the
+second line, which is the intended order.
+
+Reproduce with `npm run calibrate` (needs an API key; deliberately not part of
+`npm test`). The committed measurement lives in
+`evaluation/threshold-calibration.json`, and `tests/threshold.calibration.test.js`
+asserts the threshold still separates those bands — so a change that reintroduces
+overlap fails in CI without needing a key.
+
+---
+
 ## 5c. Design & Reliability Notes
 
 **Production-shaped.** The model is never called without retrieved context — a
@@ -210,9 +244,10 @@ looks right.
 To demonstrate software engineering maturity, the project documents its trade-offs and future scaling considerations:
 * **Evaluation Scope**: The retrieval evaluation dataset is currently small (8 questions). Production deployment would require expanding the dataset to 100+ multi-turn scenarios to verify retrieval quality at scale.
 * **Retrieval Experiments**: Retrieval accuracy (currently 75%) could be optimized in the future by running comparative evaluation runs with the new recursive chunker (`src/ingestion/chunker.js`) or adding a BM25 keyword search layer.
+* **Threshold calibration rests on a small sample**: `MATCH_THRESHOLD = 0.62` was chosen from a measured separation between in-domain scores (0.706–0.816, n=8) and noise scores (0.473–0.555, n=6). The bands are cleanly separated, but n=8 and n=6 are small. Re-run `npm run calibrate` after any corpus or embedding-model change, and widen `evaluation/stripe_questions.json` before treating the number as settled.
 * **In-Memory Rate Limiting**: The IP-based rate limiting is held in Node.js process memory. While appropriate for a single-instance portfolio demo, a production environment with multiple auto-scaling containers would require a distributed key store like Redis.
 * **Observability Depth**: Structured logging and correlation IDs are in place (`src/logging/`), and every request's outcome is logged as a queryable field (`answered`, `out_of_domain_refusal`, `refused_ungrounded`). A full deployment would add distributed tracing across service boundaries and per-request token-cost accounting, neither of which a single-service demo can demonstrate honestly.
-* **Retrieval precision is the binding constraint**: because the model is never called without grounding, an in-domain question whose best match falls just under the `0.48` similarity threshold is now refused rather than answered. That is the intended trade-off — a wrong-but-confident answer costs more than a decline — but it makes threshold tuning and corpus coverage the limiting factor on usefulness, rather than the model.
+* **Retrieval precision is the binding constraint**: because the model is never called without grounding, an in-domain question whose best match falls under `MATCH_THRESHOLD` is refused rather than answered. That is the intended trade-off — a wrong-but-confident answer costs more than a decline — but it makes threshold tuning and corpus coverage the limiting factor on usefulness, rather than the model.
 
 ---
 

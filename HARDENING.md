@@ -58,6 +58,61 @@ limitations section, not buried.
 
 ---
 
+## The gate was correct and almost never fired
+
+Found while verifying the demo before pushing, not during the original audit.
+
+The grounding gate above only helps when retrieval actually returns nothing. It
+turned out that almost nothing was rejected: `MATCH_THRESHOLD` was `0.48`, and
+measurement showed the noise band reaching **0.555**.
+
+| Population | n | Top-1 cosine similarity |
+|---|---|---|
+| In-domain (`evaluation/stripe_questions.json`) | 8 | 0.706 – 0.816 |
+| Noise (gibberish + off-topic) | 6 | 0.473 – 0.555 |
+
+Five of six noise queries cleared `0.48` — including `"zxqv plorbnat weffle
+grimsby"` at 0.544 and a Monty Python question at 0.506. Every query retrieved
+the full six chunks.
+
+So the system *was* behaving correctly in live testing — out-of-domain questions
+were refused — but by the **system prompt's domain classifier**, not by the
+code. Which is exactly the pattern the gate was built to replace: a prompt is
+not a guardrail. The gate was real, tested, and decorative.
+
+The two bands are cleanly separated (gap 0.151), so this was fixable rather than
+merely reportable. The threshold is now **0.62**, slightly below the exact
+midpoint of 0.631 to bias margin toward retaining real questions. Verified live:
+all six realistic payments questions still answer with sources; all three noise
+queries now hit the code-level gate, logging
+`outcome=refused_ungrounded cause=nothing_above_threshold retrievedChunks=0`
+with the model never called.
+
+**Three related defects fell out of the same change:**
+
+- The threshold existed as **three different literals** — `0.48` in the service,
+  `0.48` duplicated in `evaluation/evaluate.js`, and `0.45` as the repository's
+  parameter default. The evaluation harness could therefore report retrieval
+  quality for a threshold production did not use. It is now a single exported
+  constant.
+- `evaluate.js` and the new calibration script both did
+  `require('../src/repositories/document.repository')` and called
+  `.matchDocuments` on the result. After the TypeScript port that module has
+  both a default and named exports, so the require returns the namespace and the
+  method is `undefined` — failing at first call rather than at import. The
+  evaluation harness was broken and it had not shown up, because the earlier
+  test run failed on an invalid API key before reaching that line.
+- A test asserted the literal `0.48` was passed to retrieval. It now reads the
+  constant, so a threshold change is a deliberate calibration decision rather
+  than a test quietly disagreeing with production.
+
+**Honest limits.** n=8 and n=6 are small samples. The bands are well separated
+and the result is stable, but this is *measured, not proven*. `npm run
+calibrate` reproduces it, and the README records that the eval set should be
+widened before the number is treated as settled.
+
+---
+
 ## TypeScript, and the two bugs the port found
 
 The request path — config, repositories, services, routes, logging, entry

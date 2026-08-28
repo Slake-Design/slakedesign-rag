@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { ragServiceInstance } = require('../src/services/rag.service');
 const { MAX_QUESTION_CHARS } = require('../src/config/limits');
+const { logger } = require('../src/logging/logger');
 
 router.get('/health', (req, res) => res.json({ status: 'ok' }));
 
@@ -65,9 +66,9 @@ router.post('/', async (req, res) => {
         // The caller disconnected: there is no one to receive an error event,
         // and this is not a failure of the service.
         if (ac.signal.aborted) {
-            console.log('[Query Route] client disconnected; generation aborted');
+            logger.info('Client disconnected; generation aborted');
         } else {
-            console.error('[Query Route Error]', err);
+            logger.error({ errMessage: err && err.message }, 'Query pipeline failed');
 
             // `Timeout:` is the prefix withTimeout produces. Anything else is
             // unclassified and must not be given an invented cause.

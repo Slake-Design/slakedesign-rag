@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const { logger } = require('../logging/logger');
 
 /**
  * Calculates cosine similarity between two 1D vectors
@@ -74,7 +75,10 @@ class DocumentRepository {
 
         this.dimensions = this.loadDimensions(documents);
         this.documents = documents;
-        console.log(`[DocumentRepository] Loaded ${this.documents.length} in-memory documents (${this.dimensions}-d) for zero-downtime vector search.`);
+        logger.info(
+            { documentCount: this.documents.length, dimensions: this.dimensions },
+            'Corpus loaded for in-memory vector search'
+        );
     }
 
     /**

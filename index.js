@@ -3,6 +3,8 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
+const { logger } = require('./src/logging/logger');
+const { correlationMiddleware } = require('./src/logging/context');
 const app = express();
 
 // Numeric hop count, never `true`: express-rate-limit rejects `true` outright
@@ -32,6 +34,11 @@ const TRUST_PROXY_HOPS = Number.isInteger(parsedTrustProxyHops) && parsedTrustPr
     ? parsedTrustProxyHops
     : CALIBRATED_TRUST_PROXY_HOPS;
 app.set('trust proxy', TRUST_PROXY_HOPS);
+
+// First in the chain, so every downstream log line - retrieval, pruning,
+// refusal, completion - is tagged with the request that caused it. SSE streams
+// interleave, so without this their log lines cannot be told apart.
+app.use(correlationMiddleware);
 
 app.use(cors({
     origin: '*'
@@ -73,7 +80,7 @@ app.get('/health', (req, res) => res.status(200).json({ status: 'ok' }));
 // middleware by arity, so dropping the unused `next` would silently demote this to
 // ordinary middleware and stop it catching anything.
 app.use((err, req, res, next) => {
-    console.error('[Global Error]', err);
+    logger.error({ errMessage: err && err.message }, 'Unhandled error reached the global handler');
     res.status(500).json({ error: 'An unexpected server error occurred.' });
 });
 
@@ -82,10 +89,10 @@ const PORT = process.env.PORT || 3001;
 // Only bind when run directly, so tests can require the configured app.
 if (require.main === module) {
     app.listen(PORT, () => {
-        console.log(`--- SLAKE DESIGN RAG ENGINE ---`);
-        console.log(`Status: Operational`);
-        console.log(`Port: ${PORT}`);
-        console.log(`Primary Query Endpoint: http://localhost:${PORT}/query`);
+        logger.info(
+            { port: PORT, queryEndpoint: `http://localhost:${PORT}/query`, trustProxyHops: TRUST_PROXY_HOPS },
+            'Slake Design RAG engine listening'
+        );
     });
 }
 

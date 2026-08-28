@@ -1,6 +1,7 @@
 const defaultRepository = require('../repositories/document.repository');
 const defaultGemini = require('../config/gemini');
 const { REFUSAL_TEXT, NO_CONTEXT_TEXT } = defaultGemini;
+const { logger } = require('../logging/logger');
 
 // Configuration constants
 const MATCH_THRESHOLD = 0.48;
@@ -160,7 +161,7 @@ Answer:
             const baseCount = await this.chatModel.countTokens(promptHeader + promptFooter, { signal });
             baseTokens = baseCount.totalTokens;
         } catch (e) {
-            console.warn('[RAG] Failed to count base prompt tokens, using fallback:', e.message);
+            logger.warn({ errMessage: e.message, fallbackTokens: baseTokens }, 'Failed to count base prompt tokens; using fallback estimate');
         }
 
         const remainingBudget = Math.max(0, MAX_CONTEXT_TOKENS - baseTokens);
@@ -197,7 +198,10 @@ Answer:
                 accumulatedContextTokens += tokens;
                 formattedContext += chunkTexts[i];
             } else {
-                console.log(`[RAG Context Pruning] Chunk ${i + 1} pruned. Chunk size (${tokens} tokens) exceeds remaining budget (${remainingBudget - accumulatedContextTokens} tokens).`);
+                logger.debug(
+                    { chunkIndex: i + 1, chunkTokens: tokens, remainingBudget: remainingBudget - accumulatedContextTokens },
+                    'Chunk pruned: exceeds remaining context budget'
+                );
             }
         }
 
@@ -222,11 +226,18 @@ Answer:
         // Returning here is what makes the README's grounding claim true.
         if (includedChunks.length === 0) {
             if (!signal?.aborted && onChunk) onChunk({ text: NO_CONTEXT_TEXT });
-            console.log(
-                `[RAG] Refused ungrounded answer in ${Date.now() - start}ms | ` +
-                `Retrieved Chunks: ${safeMatches.length} | Included Chunks: 0 | ` +
-                `Threshold: ${MATCH_THRESHOLD} | ` +
-                `Cause: ${safeMatches.length === 0 ? 'nothing above threshold' : 'all matches pruned by token budget'}`
+            logger.info(
+                {
+                    outcome: 'refused_ungrounded',
+                    durationMs: Date.now() - start,
+                    retrievedChunks: safeMatches.length,
+                    includedChunks: 0,
+                    threshold: MATCH_THRESHOLD,
+                    cause: safeMatches.length === 0
+                        ? 'nothing_above_threshold'
+                        : 'all_matches_pruned_by_token_budget',
+                },
+                'Refused ungrounded answer; model was not called'
             );
             return;
         }
@@ -265,7 +276,17 @@ Answer:
             if (onSources) onSources(sources);
         }
 
-        console.log(`[RAG] Completed in ${Date.now() - start}ms | Retrieved Chunks: ${safeMatches.length} | Included Chunks: ${includedChunks.length} | Estimated Prompt Tokens: ${totalEstimatedPromptTokens} | Refusal: ${isRefusal}`);
+        logger.info(
+            {
+                outcome: isRefusal ? 'out_of_domain_refusal' : 'answered',
+                durationMs: Date.now() - start,
+                retrievedChunks: safeMatches.length,
+                includedChunks: includedChunks.length,
+                estimatedPromptTokens: totalEstimatedPromptTokens,
+                sourcesEmitted: !isRefusal && includedChunks.length > 0,
+            },
+            'RAG request completed'
+        );
     }
 }
 

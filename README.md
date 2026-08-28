@@ -174,6 +174,37 @@ with `CORPUS_PATH`.
 
 ---
 
+## 5c. Design & Reliability Notes
+
+**Production-shaped.** The model is never called without retrieved context — a
+question that retrieves nothing above threshold is refused, not answered from
+priors, and that is enforced in code and covered by tests verified to fail
+against the pre-fix service. TypeScript under `strict` with Zod at the HTTP
+boundary. Structured logging with correlation IDs that survive an SSE stream,
+and API-key redaction specific to how the Gemini SDK leaks credentials into
+error messages. Fail-closed corpus loading: a missing, malformed, empty or
+dimension-mismatched corpus kills the process at boot rather than producing a
+service that reports healthy and retrieves nothing.
+
+**Demo-only, and why.** The vector store is an in-memory O(n) cosine scan over
+650 documents — deliberate, because the corpus ships with the deploy and needs
+no external database or cold start. It does not scale, and that is the trade
+being made. Rate limiting is in-process. The evaluation set is 8 questions:
+enough to catch a regression, not enough to claim a quality figure.
+
+**What was fixed, and what it taught me.** See [HARDENING.md](HARDENING.md).
+The defect was that a Stripe question retrieving nothing still got a confident,
+fully-structured answer built from model priors — with citations suppressed, so
+it looked identical to a grounded one. The lesson that generalised: the system
+prompt said the model MUST produce the full structure for in-domain questions,
+and that instruction quietly overrode a `[No relevant documents found]`
+placeholder that looked like a safeguard. A prompt is not a guardrail. If a
+property must hold, it has to be enforced in code and tested — which is why the
+regression tests assert the model is never *called*, not merely that the output
+looks right.
+
+---
+
 ## 6. Known Limitations & Future Improvements
 
 To demonstrate software engineering maturity, the project documents its trade-offs and future scaling considerations:

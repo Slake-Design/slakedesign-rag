@@ -2,14 +2,14 @@ import { describe, it, expect } from 'vitest';
 import request from 'supertest';
 import express from 'express';
 
-const {
+import {
     correlationMiddleware,
     normaliseCorrelationId,
     runWithCorrelationId,
     getCorrelationId,
     CORRELATION_HEADER,
-} = require('../src/logging/context');
-const { redactSecrets } = require('../src/logging/logger');
+} from '../src/logging/context.js';
+import { redactSecrets } from '../src/logging/logger.js';
 
 /**
  * Correlation IDs on the RAG service.

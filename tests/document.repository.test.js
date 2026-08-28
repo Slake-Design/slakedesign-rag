@@ -3,7 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-const { DocumentRepository } = require('../src/repositories/document.repository');
+import { DocumentRepository } from '../src/repositories/document.repository.js';
 
 /**
  * Two failure modes that used to be silent:

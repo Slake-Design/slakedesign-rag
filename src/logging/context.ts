@@ -1,5 +1,6 @@
-const { AsyncLocalStorage } = require('node:async_hooks');
-const { randomUUID } = require('node:crypto');
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { randomUUID } from 'node:crypto';
+import type { Request, Response, NextFunction } from 'express';
 
 /**
  * Request-scoped correlation context.
@@ -15,9 +16,13 @@ const { randomUUID } = require('node:crypto');
  * interleaved with other concurrent streams. Without a shared ID those lines
  * cannot be reassembled into the request that produced them.
  */
-const requestContext = new AsyncLocalStorage();
+export interface RequestContext {
+    correlationId: string;
+}
 
-const CORRELATION_HEADER = 'x-correlation-id';
+export const requestContext = new AsyncLocalStorage<RequestContext>();
+
+export const CORRELATION_HEADER = 'x-correlation-id';
 
 /**
  * Normalises a caller-supplied correlation ID.
@@ -27,32 +32,22 @@ const CORRELATION_HEADER = 'x-correlation-id';
  * string is a log-injection vector. Anything that does not survive
  * normalisation is discarded for a fresh UUID rather than repaired.
  */
-function normaliseCorrelationId(raw) {
+export function normaliseCorrelationId(raw: string | undefined): string | undefined {
     if (!raw) return undefined;
     const cleaned = String(raw).trim().slice(0, 64).replace(/[^A-Za-z0-9_-]/g, '');
     return cleaned.length > 0 ? cleaned : undefined;
 }
 
-function getCorrelationId() {
-    const store = requestContext.getStore();
-    return store ? store.correlationId : undefined;
+export function getCorrelationId(): string | undefined {
+    return requestContext.getStore()?.correlationId;
 }
 
-function runWithCorrelationId(correlationId, fn) {
+export function runWithCorrelationId<T>(correlationId: string, fn: () => T): T {
     return requestContext.run({ correlationId }, fn);
 }
 
-function correlationMiddleware(req, res, next) {
-    const correlationId = normaliseCorrelationId(req.get(CORRELATION_HEADER)) || randomUUID();
+export function correlationMiddleware(req: Request, res: Response, next: NextFunction): void {
+    const correlationId = normaliseCorrelationId(req.get(CORRELATION_HEADER)) ?? randomUUID();
     res.setHeader(CORRELATION_HEADER, correlationId);
     requestContext.run({ correlationId }, next);
 }
-
-module.exports = {
-    requestContext,
-    CORRELATION_HEADER,
-    normaliseCorrelationId,
-    getCorrelationId,
-    runWithCorrelationId,
-    correlationMiddleware,
-};

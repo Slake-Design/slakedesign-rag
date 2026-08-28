@@ -2,12 +2,16 @@
   "name": "slakedesign-rag",
   "version": "1.0.0",
   "description": "RAG backend for a Stripe API knowledge base. Node.js, Express, in-memory vector search, Gemini embeddings.",
-  "main": "index.js",
+  "main": "dist/index.js",
   "scripts": {
-    "start": "node index.js",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "start": "node dist/index.js",
+    "dev": "tsx index.ts",
     "test": "vitest run",
-    "ingest": "node scripts/ingest.js",
-    "ingest:dry": "node scripts/ingest.js --dry-run"
+    "ingest": "tsx scripts/ingest.js",
+    "ingest:dry": "tsx scripts/ingest.js --dry-run",
+    "evaluate": "tsx evaluation/evaluate.js"
   },
   "keywords": [],
   "author": "",
@@ -24,10 +28,17 @@
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "express-rate-limit": "^8.3.2",
-    "pino": "^10.3.1"
+    "pino": "^10.3.1",
+    "zod": "^4.5.1"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.4.0",
+    "@types/supertest": "^7.2.1",
     "supertest": "^7.2.2",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   }
 }

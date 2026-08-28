@@ -1,0 +1,25 @@
+{
+  "measuredAt": "2026-08-28",
+  "embeddingModel": "models/gemini-embedding-001",
+  "dimensions": 3072,
+  "corpusDocumentCount": 650,
+  "metric": "top-1 cosine similarity against the committed corpus",
+  "note": "Regenerate with `npm run calibrate`. These are real measurements, not fixtures invented to fit the threshold. tests/threshold.calibration.test.js asserts MATCH_THRESHOLD separates the two bands below, so a future threshold change that reintroduces overlap fails in CI without needing an API key.",
+  "inDomain": {
+    "source": "evaluation/stripe_questions.json",
+    "n": 8,
+    "topSimilarity": [0.706, 0.716, 0.717, 0.752, 0.754, 0.769, 0.776, 0.816]
+  },
+  "noise": {
+    "n": 6,
+    "queries": [
+      "zxqv plorbnat weffle grimsby",
+      "asdkjh asdkjh asdkjh",
+      "What is the airspeed velocity of an unladen swallow?",
+      "What is the distance to the moon?",
+      "Who won the NBA finals in 1998?",
+      "Recipe for sourdough starter"
+    ],
+    "topSimilarity": [0.473, 0.500, 0.506, 0.518, 0.544, 0.555]
+  }
+}

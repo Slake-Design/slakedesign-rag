@@ -11,7 +11,8 @@
     "test": "vitest run",
     "ingest": "tsx scripts/ingest.js",
     "ingest:dry": "tsx scripts/ingest.js --dry-run",
-    "evaluate": "tsx evaluation/evaluate.js"
+    "evaluate": "tsx evaluation/evaluate.js",
+    "calibrate": "tsx evaluation/calibrate-threshold.js"
   },
   "keywords": [],
   "author": "",

@@ -2,7 +2,15 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const { embeddingModel } = require('../src/config/gemini');
-const documentRepository = require('../src/repositories/document.repository');
+// Named export, not the module object. document.repository.ts has both a
+// default and named exports, so a CommonJS require() yields the module
+// namespace - `require(...).matchDocuments` is undefined, silently, at the
+// first call rather than at import.
+const { documentRepository } = require('../src/repositories/document.repository');
+// Read the production threshold rather than duplicating a literal: the harness
+// must evaluate what the service actually uses, or the number it reports is
+// about a system nobody runs.
+const { MATCH_THRESHOLD, MATCH_COUNT } = require('../src/config/limits');
 
 // Load dataset
 const datasetPath = path.join(__dirname, 'stripe_questions.json');
@@ -36,8 +44,8 @@ async function evaluate() {
             // 2. Perform Cosine Similarity RPC
             const matches = await documentRepository.matchDocuments(
                 embedding,
-                0.48, // Default threshold
-                6     // Top-K = 6
+                MATCH_THRESHOLD,
+                MATCH_COUNT
             );
 
             const latency = Date.now() - t0;

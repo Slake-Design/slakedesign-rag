@@ -1,6 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import { logger } from '../logging/logger.js';
+import { MATCH_THRESHOLD, MATCH_COUNT } from '../config/limits.js';
 
 /** A corpus document with its precomputed embedding vector. */
 export interface CorpusDocument {
@@ -191,8 +192,8 @@ export class DocumentRepository implements IDocumentRepository {
      */
     async matchDocuments(
         queryEmbedding: number[],
-        matchThreshold = 0.45,
-        matchCount = 6
+        matchThreshold = MATCH_THRESHOLD,
+        matchCount = MATCH_COUNT
     ): Promise<RetrievedChunk[]> {
         this.loadDocuments();
 

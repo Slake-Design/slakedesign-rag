@@ -2,11 +2,9 @@ import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';
 import express from 'express';
 
-// Set dummy environment variables to prevent initialization checks from throwing during testing
-process.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'mock-gemini-key';
-
-// Load local environment variables if present
-require('dotenv').config();
+// Environment setup lives in tests/setup.js, not here. ESM imports are hoisted,
+// so any assignment in this file body runs AFTER the imports above have already
+// evaluated src/config/gemini.ts - which throws when GEMINI_API_KEY is unset.
 
 // Import target service and router
 import { RagService, ragServiceInstance, isDomainRefusal } from '../src/services/rag.service.js';

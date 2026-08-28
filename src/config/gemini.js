@@ -19,6 +19,12 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 // check in rag.service.js matches against it.
 const REFUSAL_TEXT = 'I’m specialized in Stripe, payments, and payment engineering. I don’t have information on that topic.';
 
+// Emitted by the service - never by the model - when retrieval returns nothing
+// above the similarity threshold, or when everything retrieved was pruned by the
+// context budget. The model is not called at all in that case, so this string
+// cannot be paraphrased, structured, or argued with: it is the whole response.
+const NO_CONTEXT_TEXT = 'I could not find anything in the indexed Stripe documentation that answers this. Rather than answer from memory, I’m stopping here — this system only answers from retrieved sources. Try rephrasing with more specific API or product terms.';
+
 const SYSTEM_PROMPT = `You are a Principal Solutions Architect at Slake Design — expert in Stripe, payments infrastructure, fintech, and payment systems engineering.
 
 <domain_classifier>
@@ -76,5 +82,6 @@ module.exports = {
     chatModel,
     embeddingModel,
     SYSTEM_PROMPT, // Exported for token counting or prompt reference if needed
-    REFUSAL_TEXT
+    REFUSAL_TEXT,
+    NO_CONTEXT_TEXT
 };

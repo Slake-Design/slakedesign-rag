@@ -48,7 +48,7 @@ This RAG engine resolves these issues by anchoring Gemini responses in verified 
   - *"What endpoint and parameters are used to create a PaymentIntent?"*
 * **RAG Capabilities Demonstrated**:
   - **Semantic Retrieval**: Fetches relevant context matching the question's intent.
-  - **Grounded Responses**: Generation is prompted over the retrieved context, and citations are returned only for answers that used it.
+  - **Grounded Responses**: The model is never called without retrieved context. If no chunk clears the similarity threshold — or everything retrieved is pruned by the token budget — the service returns a refusal and stops, rather than letting the model answer from its own priors. Enforced in `src/services/rag.service.js` (grounding gate) and covered by `tests/query.test.js`.
   - **Incremental Streaming**: Renders response chunks as they generate using SSE.
   - **Verifiable Citations**: Returns database IDs, URLs, and similarity scores.
 
@@ -151,7 +151,7 @@ To demonstrate software engineering maturity, the project documents its trade-of
 * **Retrieval Experiments**: Retrieval accuracy (currently 75%) could be optimized in the future by running comparative evaluation runs with the new recursive chunker (`src/ingestion/chunker.js`) or adding a BM25 keyword search layer.
 * **In-Memory Rate Limiting**: The IP-based rate limiting is held in Node.js process memory. While appropriate for a single-instance portfolio demo, a production environment with multiple auto-scaling containers would require a distributed key store like Redis.
 * **Production Observability**: An enterprise deployment would require integrating transaction tracing, request tracking, and detailed token usage logging.
-* **Grounding is not yet enforced in code**: if no chunk clears the similarity threshold, the model is still called with a `[No relevant documents found]` placeholder (`src/services/rag.service.js`). Because the system prompt requires the full four-section structure for any in-domain question, the model can answer a payments question from its own priors. Citations are suppressed in that case, so an ungrounded answer is visually indistinguishable from a grounded one. This is a real correctness gap, not a styling issue, and it is being closed.
+* **Retrieval precision is the binding constraint**: because the model is never called without grounding, an in-domain question whose best match falls just under the `0.48` similarity threshold is now refused rather than answered. That is the intended trade-off — a wrong-but-confident answer costs more than a decline — but it makes threshold tuning and corpus coverage the limiting factor on usefulness, rather than the model.
 
 ---
 

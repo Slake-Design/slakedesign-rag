@@ -11,7 +11,7 @@ require('dotenv').config();
 // Import target service and router
 const { RagService, ragServiceInstance } = require('../src/services/rag.service');
 const { MAX_QUESTION_CHARS } = require('../src/config/limits');
-const { REFUSAL_TEXT } = require('../src/config/gemini');
+const { REFUSAL_TEXT, NO_CONTEXT_TEXT } = require('../src/config/gemini');
 const app = express();
 app.use(express.json());
 const queryRouter = require('../routes/query');
@@ -210,6 +210,129 @@ describe('RagService (Orchestrator Logic via Dependency Injection)', () => {
         expect(returnedSources).toHaveLength(2); // Only matches above 0.48 similarity are kept
         expect(returnedSources[0].id).toBe(1);
         expect(returnedSources[1].id).toBe(3);
+    });
+
+    /**
+     * Grounding gate regression suite.
+     *
+     * This path previously called the model with a "[No relevant documents
+     * found]" placeholder in the prompt. Because the system prompt requires the
+     * full four-section structure for any in-domain question, the model answered
+     * payments questions from its own priors, and source suppression meant the
+     * ungrounded answer carried no citations to signal it. These tests fail if
+     * that behaviour ever returns.
+     */
+    describe('grounding gate: never answers without retrieved context', () => {
+        it('refuses without calling the model when retrieval returns nothing', async () => {
+            mockEmbedContent.mockResolvedValue({ embedding: { values: [0.1, 0.2] } });
+            mockMatchDocuments.mockResolvedValue([]);
+            mockCountTokens.mockResolvedValue({ totalTokens: 50 });
+
+            const chunks = [];
+            let returnedSources = null;
+
+            await testService.generateAnswer('How do I create a PaymentIntent?', {
+                onChunk: (chunk) => chunks.push(chunk.text || chunk),
+                onSources: (sources) => { returnedSources = sources; }
+            });
+
+            // The invariant that matters: the LLM is never reached.
+            expect(mockGenerateContentStream).not.toHaveBeenCalled();
+            expect(chunks.join('')).toBe(NO_CONTEXT_TEXT);
+            expect(returnedSources).toBeNull();
+        });
+
+        it('refuses when every match falls below the similarity threshold', async () => {
+            mockEmbedContent.mockResolvedValue({ embedding: { values: [0.1, 0.2] } });
+            // Retrieval returned rows, but none clear MATCH_THRESHOLD (0.48).
+            mockMatchDocuments.mockResolvedValue([
+                { id: 1, content: 'Weak match', similarity: 0.47, metadata: { source: 'docs-a' } },
+                { id: 2, content: 'Weaker match', similarity: 0.12, metadata: { source: 'docs-b' } },
+            ]);
+            mockCountTokens.mockResolvedValue({ totalTokens: 50 });
+
+            const chunks = [];
+            let returnedSources = null;
+
+            await testService.generateAnswer('How do I verify a webhook signature?', {
+                onChunk: (chunk) => chunks.push(chunk.text || chunk),
+                onSources: (sources) => { returnedSources = sources; }
+            });
+
+            expect(mockGenerateContentStream).not.toHaveBeenCalled();
+            expect(chunks.join('')).toBe(NO_CONTEXT_TEXT);
+            expect(returnedSources).toBeNull();
+        });
+
+        it('refuses when matches clear the threshold but are pruned by the token budget', async () => {
+            mockEmbedContent.mockResolvedValue({ embedding: { values: [0.1, 0.2] } });
+            mockMatchDocuments.mockResolvedValue([
+                { id: 1, content: 'Relevant but enormous', similarity: 0.95, metadata: { source: 'docs-big' } },
+            ]);
+            // Base prompt is small; the single chunk is larger than the whole
+            // 3,000-token budget, so nothing can be included.
+            mockCountTokens.mockImplementation((text) =>
+                Promise.resolve({ totalTokens: text.includes('Relevant but enormous') ? 999999 : 100 })
+            );
+
+            const chunks = [];
+            let returnedSources = null;
+
+            await testService.generateAnswer('Explain Stripe Connect payouts', {
+                onChunk: (chunk) => chunks.push(chunk.text || chunk),
+                onSources: (sources) => { returnedSources = sources; }
+            });
+
+            // Retrieval succeeded but grounding did not survive budgeting.
+            // Answering here would be just as ungrounded.
+            expect(mockGenerateContentStream).not.toHaveBeenCalled();
+            expect(chunks.join('')).toBe(NO_CONTEXT_TEXT);
+            expect(returnedSources).toBeNull();
+        });
+
+        it('still answers normally as soon as one chunk is grounded', async () => {
+            mockEmbedContent.mockResolvedValue({ embedding: { values: [0.1, 0.2] } });
+            mockMatchDocuments.mockResolvedValue([
+                { id: 7, content: 'Grounded chunk', similarity: 0.81, metadata: { source: 'docs-ok' } },
+            ]);
+            mockCountTokens.mockResolvedValue({ totalTokens: 50 });
+            mockGenerateContentStream.mockResolvedValue({
+                stream: createMockStream(['A grounded answer'])
+            });
+
+            const chunks = [];
+            let returnedSources = null;
+
+            await testService.generateAnswer('How do I capture a PaymentIntent?', {
+                onChunk: (chunk) => chunks.push(chunk.text || chunk),
+                onSources: (sources) => { returnedSources = sources; }
+            });
+
+            // The gate must not over-trigger: one surviving chunk is enough.
+            expect(mockGenerateContentStream).toHaveBeenCalledTimes(1);
+            expect(chunks.join('')).toBe('A grounded answer');
+            expect(returnedSources).toHaveLength(1);
+            expect(returnedSources[0].id).toBe(7);
+        });
+
+        it('does not leak the retrieval placeholder into the prompt', async () => {
+            mockEmbedContent.mockResolvedValue({ embedding: { values: [0.1, 0.2] } });
+            mockMatchDocuments.mockResolvedValue([
+                { id: 9, content: 'Grounded chunk', similarity: 0.77, metadata: { source: 'docs-ok' } },
+            ]);
+            mockCountTokens.mockResolvedValue({ totalTokens: 50 });
+            mockGenerateContentStream.mockResolvedValue({
+                stream: createMockStream(['ok'])
+            });
+
+            await testService.generateAnswer('How do I refund a charge?', {
+                onChunk: () => {}
+            });
+
+            const prompt = mockGenerateContentStream.mock.calls[0][0];
+            expect(prompt).not.toContain('[No relevant documents found]');
+            expect(prompt).toContain('Grounded chunk');
+        });
     });
 
     it('should retry on Gemini API 429 Rate Limit error and succeed', async () => {

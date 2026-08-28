@@ -1,6 +1,6 @@
 const defaultRepository = require('../repositories/document.repository');
 const defaultGemini = require('../config/gemini');
-const { REFUSAL_TEXT } = defaultGemini;
+const { REFUSAL_TEXT, NO_CONTEXT_TEXT } = defaultGemini;
 
 // Configuration constants
 const MATCH_THRESHOLD = 0.48;
@@ -203,7 +203,35 @@ Answer:
 
         const context = formattedContext.trim();
         const totalEstimatedPromptTokens = baseTokens + accumulatedContextTokens;
-        const prompt = `${promptHeader}${context || '[No relevant documents found]'}${promptFooter}`;
+
+        // ================= GROUNDING GATE =================
+        // Nothing survived retrieval, or everything retrieved was pruned by the
+        // token budget. Either way there is no grounding, and the model must not
+        // be called.
+        //
+        // This path used to fall through to the model with a
+        // "[No relevant documents found]" placeholder in the prompt. That was a
+        // correctness bug, not a cosmetic one: the system prompt instructs the
+        // model that it MUST emit the full four-section structure for any
+        // in-domain question, so a payments question with zero retrieval
+        // produced a confident, fully-structured answer built entirely from
+        // model priors. Sources are suppressed when includedChunks is empty, so
+        // that answer also carried no citations - leaving an ungrounded answer
+        // visually identical to a grounded one.
+        //
+        // Returning here is what makes the README's grounding claim true.
+        if (includedChunks.length === 0) {
+            if (!signal?.aborted && onChunk) onChunk({ text: NO_CONTEXT_TEXT });
+            console.log(
+                `[RAG] Refused ungrounded answer in ${Date.now() - start}ms | ` +
+                `Retrieved Chunks: ${safeMatches.length} | Included Chunks: 0 | ` +
+                `Threshold: ${MATCH_THRESHOLD} | ` +
+                `Cause: ${safeMatches.length === 0 ? 'nothing above threshold' : 'all matches pruned by token budget'}`
+            );
+            return;
+        }
+
+        const prompt = `${promptHeader}${context}${promptFooter}`;
 
         // 4. Gemini Stream Generation
         const result = await generateWithRetry(this.chatModel, prompt, signal);

@@ -2,7 +2,7 @@
 
 [![Node.js CI](https://github.com/Slake-Design/slakedesign-rag/actions/workflows/test.yml/badge.svg)](https://github.com/Slake-Design/slakedesign-rag/actions/workflows/test.yml)
 
-A Retrieval-Augmented Generation (RAG) backend API that serves grounded, payment-systems integration documentation. The system provides streamed response chunks to developer questions by performing semantic similarity searches over Stripe API specifications and developer guides.
+A **TypeScript** Retrieval-Augmented Generation (RAG) backend API that serves grounded, payment-systems integration documentation. The system provides streamed response chunks to developer questions by performing semantic similarity searches over Stripe API specifications and developer guides.
 
 ---
 
@@ -16,6 +16,8 @@ Designed for recruiters and engineering managers reviewing in 3-5 minutes:
 * **Decoupled Service Architecture**: Separates Express HTTP/SSE transport controllers (`routes/`) from the core AI workflow (`src/services/rag.service.js`) and database operations (`src/repositories/`).
 * **Dependency-Injected Test Design**: Utilizes constructor-based injection in `RagService` to mock external database and LLM APIs cleanly, ensuring automated tests (`npm test`) run isolated and cost-free.
 * **Production-Style Safety Controls**: Implements IP-based rate limiting to prevent API budget drain and sanitised error outputs.
+* **Typed End-to-End**: The request path — config, repositories, services, routes, entry point — is TypeScript under `strict` with `noUncheckedIndexedAccess`, and the HTTP boundary is validated with Zod. The retrieval contract (`RetrievedChunk`, `Source`, `GeminiModels`) is declared rather than inferred from whatever the SDK happened to return.
+* **Correlated Structured Logging**: Pino with an `AsyncLocalStorage` mixin, so every line of a request — retrieval, budget pruning, refusal-or-answer, completion — carries one `x-correlation-id`. SSE streams interleave, so this is what makes a single request's logs reassemblable.
 
 ### Public access policy
 
@@ -144,13 +146,41 @@ embedding requests; reproduce results with `node evaluation/evaluate.js`.
 
 ---
 
+## 5b. Language & Layout
+
+The request path is TypeScript. Three files are deliberately **not**:
+
+| File | Why it stays JavaScript |
+|---|---|
+| `scripts/ingest.js` | Offline corpus-building tool. Run by hand, never on the request path, and covered by `tests/ingest.test.js`. |
+| `evaluation/evaluate.js` | Offline retrieval-evaluation harness. Same reasoning. |
+| `src/ingestion/chunker.js` | Standalone, dependency-free, and documented above as a future ingestion strategy not yet wired into the pipeline. |
+
+Both scripts import TypeScript modules and so run under `tsx` (`npm run ingest`,
+`npm run evaluate`) rather than bare `node`. Porting them was possible but not
+useful: they are batch tooling whose failure mode is a visible non-zero exit at
+a keyboard, not a silent wrong answer served to a user. The typing effort went
+where a type error becomes a production defect.
+
+The build emits CommonJS. That is a deliberate difference from the sibling
+`task-queue-system` and `mcp-sqlite-bridge` repos, which are ESM: this repo's
+tooling and tests already used `require()` throughout, and converting the module
+system at the same time as the language would have made a behaviour-preserving
+port impossible to verify as behaviour-preserving.
+
+**Corpus path**: resolved from the working directory, not `__dirname`, because
+the compiled output lives in `dist/` while the 25 MB corpus does not. Override
+with `CORPUS_PATH`.
+
+---
+
 ## 6. Known Limitations & Future Improvements
 
 To demonstrate software engineering maturity, the project documents its trade-offs and future scaling considerations:
 * **Evaluation Scope**: The retrieval evaluation dataset is currently small (8 questions). Production deployment would require expanding the dataset to 100+ multi-turn scenarios to verify retrieval quality at scale.
 * **Retrieval Experiments**: Retrieval accuracy (currently 75%) could be optimized in the future by running comparative evaluation runs with the new recursive chunker (`src/ingestion/chunker.js`) or adding a BM25 keyword search layer.
 * **In-Memory Rate Limiting**: The IP-based rate limiting is held in Node.js process memory. While appropriate for a single-instance portfolio demo, a production environment with multiple auto-scaling containers would require a distributed key store like Redis.
-* **Production Observability**: An enterprise deployment would require integrating transaction tracing, request tracking, and detailed token usage logging.
+* **Observability Depth**: Structured logging and correlation IDs are in place (`src/logging/`), and every request's outcome is logged as a queryable field (`answered`, `out_of_domain_refusal`, `refused_ungrounded`). A full deployment would add distributed tracing across service boundaries and per-request token-cost accounting, neither of which a single-service demo can demonstrate honestly.
 * **Retrieval precision is the binding constraint**: because the model is never called without grounding, an in-domain question whose best match falls just under the `0.48` similarity threshold is now refused rather than answered. That is the intended trade-off — a wrong-but-confident answer costs more than a decline — but it makes threshold tuning and corpus coverage the limiting factor on usefulness, rather than the model.
 
 ---

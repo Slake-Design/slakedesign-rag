@@ -1,5 +1,5 @@
-const pino = require('pino');
-const { getCorrelationId } = require('./context');
+import pino from 'pino';
+import { getCorrelationId } from './context.js';
 
 /**
  * Strips credentials out of anything resembling a connection URL, plus bare
@@ -10,13 +10,13 @@ const { getCorrelationId } = require('./context');
  * the Google Generative AI SDK puts the API key in: a failed request URL
  * carries `...?key=<GEMINI_API_KEY>`, and that string reaches error messages.
  */
-function redactSecrets(input) {
+export function redactSecrets(input: unknown): string {
     return String(input)
         .replace(/(rediss?|https?|postgres(?:ql)?):\/\/[^:/@\s]*:[^@\s]*@/gi, '$1://[REDACTED]@')
         .replace(/\b(password|token|apikey|api_key|secret|key)=([^&\s]+)/gi, '$1=[REDACTED]');
 }
 
-const logger = pino({
+export const logger = pino({
     level: process.env.LOG_LEVEL || 'info',
     base: { service: 'slakedesign-rag' },
     // Tags every line with the active correlation ID without any call site
@@ -45,15 +45,14 @@ const logger = pino({
         censor: '[REDACTED]',
     },
     formatters: {
-        log(object) {
-            for (const key of ['errMessage', 'msg', 'reason']) {
-                if (typeof object[key] === 'string') {
-                    object[key] = redactSecrets(object[key]);
+        log(object: Record<string, unknown>) {
+            for (const key of ['errMessage', 'msg', 'reason'] as const) {
+                const value = object[key];
+                if (typeof value === 'string') {
+                    object[key] = redactSecrets(value);
                 }
             }
             return object;
         },
     },
 });
-
-module.exports = { logger, redactSecrets };

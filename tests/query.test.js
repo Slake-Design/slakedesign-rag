@@ -9,12 +9,12 @@ process.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'mock-gemini-key';
 require('dotenv').config();
 
 // Import target service and router
-const { RagService, ragServiceInstance } = require('../src/services/rag.service');
-const { MAX_QUESTION_CHARS } = require('../src/config/limits');
-const { REFUSAL_TEXT, NO_CONTEXT_TEXT } = require('../src/config/gemini');
+import { RagService, ragServiceInstance, isDomainRefusal } from '../src/services/rag.service.js';
+import { MAX_QUESTION_CHARS } from '../src/config/limits.js';
+import { REFUSAL_TEXT, NO_CONTEXT_TEXT } from '../src/config/gemini.js';
 const app = express();
 app.use(express.json());
-const queryRouter = require('../routes/query');
+import queryRouter from '../routes/query.js';
 app.use('/query', queryRouter);
 
 // Helper function to create mock generative streams
@@ -497,7 +497,6 @@ describe('RagService (Orchestrator Logic via Dependency Injection)', () => {
 });
 
 describe('isDomainRefusal', () => {
-    const { isDomainRefusal } = require('../src/services/rag.service');
 
     it('returns false for empty and missing input', () => {
         expect(isDomainRefusal('')).toBe(false);
@@ -508,9 +507,13 @@ describe('isDomainRefusal', () => {
 
 
 describe('app configuration', () => {
-    const loadApp = () => {
-        delete require.cache[require.resolve('../index.js')];
-        return require('../index.js');
+    // index.ts reads TRUST_PROXY_HOPS at module load, so each case needs a fresh
+    // evaluation. vi.resetModules() replaces the CommonJS require.cache delete
+    // that worked before the TypeScript port: vitest owns module resolution now,
+    // and require.resolve cannot see a .ts specifier.
+    const loadApp = async () => {
+        vi.resetModules();
+        return (await import('../index.js')).default;
     };
 
     afterEach(() => {
@@ -522,21 +525,21 @@ describe('app configuration', () => {
     // visitor into one shared rate-limit bucket.
     const CALIBRATED_HOPS = 2;
 
-    it('defaults trust proxy to the calibrated hop count when TRUST_PROXY_HOPS is unset', () => {
+    it('defaults trust proxy to the calibrated hop count when TRUST_PROXY_HOPS is unset', async () => {
         delete process.env.TRUST_PROXY_HOPS;
-        expect(loadApp().get('trust proxy')).toBe(CALIBRATED_HOPS);
+        expect((await loadApp()).get('trust proxy')).toBe(CALIBRATED_HOPS);
     });
 
-    it('reflects an explicitly configured TRUST_PROXY_HOPS value', () => {
+    it('reflects an explicitly configured TRUST_PROXY_HOPS value', async () => {
         process.env.TRUST_PROXY_HOPS = '3';
-        expect(loadApp().get('trust proxy')).toBe(3);
+        expect((await loadApp()).get('trust proxy')).toBe(3);
     });
 
     it.each(['abc', '-1', '1.5', '', '   '])(
         'falls back to the calibrated hop count for the invalid value %j',
-        (value) => {
+        async (value) => {
             process.env.TRUST_PROXY_HOPS = value;
-            expect(loadApp().get('trust proxy')).toBe(CALIBRATED_HOPS);
+            expect((await loadApp()).get('trust proxy')).toBe(CALIBRATED_HOPS);
         }
     );
 
@@ -544,7 +547,7 @@ describe('app configuration', () => {
     // rate limiter counts everyone into one bucket.
     it('resolves req.ip to the real client through the calibrated hop count', async () => {
         delete process.env.TRUST_PROXY_HOPS;
-        const configured = loadApp();
+        const configured = await loadApp();
         configured.get('/__probe_client', (req, res) => res.json({ ip: req.ip }));
 
         // The chain the deployment produces: client, then Cloudflare. The socket peer
@@ -558,7 +561,7 @@ describe('app configuration', () => {
 
     it('ignores X-Forwarded-For entries a client prepends to forge an identity', async () => {
         delete process.env.TRUST_PROXY_HOPS;
-        const configured = loadApp();
+        const configured = await loadApp();
         configured.get('/__probe_forged', (req, res) => res.json({ ip: req.ip }));
 
         // Express counts from the trusted right-hand end, so a forged left-hand entry
@@ -572,7 +575,7 @@ describe('app configuration', () => {
 
     it('serves /health with no calibration field left on it', async () => {
         delete process.env.TRUST_PROXY_HOPS;
-        const res = await request(loadApp()).get('/health');
+        const res = await request(await loadApp()).get('/health');
 
         expect(res.status).toBe(200);
         expect(res.body).toEqual({ status: 'ok' });
@@ -583,7 +586,7 @@ describe('app configuration', () => {
     // the real app and its real limiter, not a copy: well past the limit of 10.
     it('does not charge /query/health against the query rate limit', async () => {
         delete process.env.TRUST_PROXY_HOPS;
-        const configured = loadApp();
+        const configured = await loadApp();
 
         const statuses = [];
         for (let i = 0; i < 12; i++) {
@@ -598,7 +601,7 @@ describe('rate limiter response', () => {
     it('returns the documented JSON body once the limit is exceeded', async () => {
         const rateLimit = require('express-rate-limit');
         // The same frozen constant the production limiter is configured with.
-        const RATE_LIMIT_MESSAGE = require('../index.js').RATE_LIMIT_MESSAGE;
+        const { RATE_LIMIT_MESSAGE } = await import('../index.js');
 
         // A fresh limiter with its own store, so this never touches the
         // production 1-hour window or shares state with another test.

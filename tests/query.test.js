@@ -10,7 +10,7 @@ require('dotenv').config();
 
 // Import target service and router
 import { RagService, ragServiceInstance, isDomainRefusal } from '../src/services/rag.service.js';
-import { MAX_QUESTION_CHARS } from '../src/config/limits.js';
+import { MAX_QUESTION_CHARS, MATCH_THRESHOLD, MATCH_COUNT } from '../src/config/limits.js';
 import { REFUSAL_TEXT, NO_CONTEXT_TEXT } from '../src/config/gemini.js';
 const app = express();
 app.use(express.json());
@@ -203,11 +203,13 @@ describe('RagService (Orchestrator Logic via Dependency Injection)', () => {
 
         // Verify embedding and retrieval were called
         expect(mockEmbedContent).toHaveBeenCalledWith('How to make payments?', { signal: undefined });
-        expect(mockMatchDocuments).toHaveBeenCalledWith([0.1, 0.2], 0.48, 6);
+        // Read the constant rather than a literal: a threshold change should be a
+        // deliberate calibration decision, not a test that silently disagrees.
+        expect(mockMatchDocuments).toHaveBeenCalledWith([0.1, 0.2], MATCH_THRESHOLD, MATCH_COUNT);
 
         // Verify outputs
         expect(chunks.join('')).toBe('Mocked generated RAG response');
-        expect(returnedSources).toHaveLength(2); // Only matches above 0.48 similarity are kept
+        expect(returnedSources).toHaveLength(2); // Only matches at or above MATCH_THRESHOLD are kept
         expect(returnedSources[0].id).toBe(1);
         expect(returnedSources[1].id).toBe(3);
     });
@@ -244,9 +246,9 @@ describe('RagService (Orchestrator Logic via Dependency Injection)', () => {
 
         it('refuses when every match falls below the similarity threshold', async () => {
             mockEmbedContent.mockResolvedValue({ embedding: { values: [0.1, 0.2] } });
-            // Retrieval returned rows, but none clear MATCH_THRESHOLD (0.48).
+            // Retrieval returned rows, but none clear MATCH_THRESHOLD.
             mockMatchDocuments.mockResolvedValue([
-                { id: 1, content: 'Weak match', similarity: 0.47, metadata: { source: 'docs-a' } },
+                { id: 1, content: 'Weak match', similarity: MATCH_THRESHOLD - 0.01, metadata: { source: 'docs-a' } },
                 { id: 2, content: 'Weaker match', similarity: 0.12, metadata: { source: 'docs-b' } },
             ]);
             mockCountTokens.mockResolvedValue({ totalTokens: 50 });

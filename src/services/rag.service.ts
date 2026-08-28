@@ -34,9 +34,10 @@ export interface GeminiModels {
     };
 }
 
-// Configuration constants
-const MATCH_THRESHOLD = 0.48;
-const MATCH_COUNT = 6;
+// Retrieval thresholds live in config/limits.ts so the service, the repository
+// default and the evaluation harness cannot drift apart. See that file for the
+// calibration measurement behind MATCH_THRESHOLD.
+import { MATCH_THRESHOLD, MATCH_COUNT } from '../config/limits.js';
 const MAX_CONTEXT_TOKENS = parseInt(process.env.MAX_CONTEXT_TOKENS ?? '', 10) || 3000;
 
 // ====================== REFUSAL DETECTION ======================

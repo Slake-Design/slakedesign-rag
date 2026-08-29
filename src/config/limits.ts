@@ -10,33 +10,40 @@ export const MAX_QUESTION_CHARS = 2000;
  * the repository's parameter default - which meant the eval harness could
  * report retrieval quality for a threshold production did not use.
  *
- * CALIBRATION (measured 2026-08-28 against gemini-embedding-001, 3072-d,
+ * CALIBRATION (re-measured 2026-08-29 against gemini-embedding-001, 3072-d,
  * over the committed 650-document corpus). Top-1 cosine similarity:
  *
- *   in-domain  (evaluation/stripe_questions.json, n=8):  0.706 - 0.816
- *   noise      (gibberish + off-topic, n=6):             0.473 - 0.555
- *   separation gap:                                      0.151
+ *   in-domain (n=20):  0.628 - 0.816
+ *   noise     (n=20):  0.452 - 0.593
+ *   separation gap:    0.035
  *
- * The exact midpoint is 0.631. 0.62 is used instead: it biases the margin
- * toward retaining real questions (0.086 above the threshold to the nearest
- * in-domain score, 0.065 below it to the nearest noise score) rather than
- * splitting the gap evenly. For a demo, wrongly refusing a genuine payments
- * question is a worse failure than admitting a borderline one, and the
- * out-of-domain classifier in the system prompt remains as a second line.
+ * 0.61 sits just below the midpoint (0.611), biasing the small remaining margin
+ * toward retaining real questions: 0.017 above the noise ceiling, 0.018 below
+ * the weakest in-domain score. Verified by `npm run calibrate`: 0/20 noise
+ * admitted, 0/20 in-domain refused.
  *
- * Verified by `npm run calibrate`: 0/6 noise admitted, 0/8 in-domain refused.
+ * WHY THIS MOVED DOWN, NOT UP. An earlier calibration used n=8 in-domain and
+ * n=6 noise and reported a 0.151 gap, which suggested the threshold could
+ * safely rise toward 0.65. That gap was an artifact of a small, easy sample.
+ * Widening both populations to 20 dropped the weakest in-domain score from
+ * 0.706 to 0.628 and raised the noise ceiling from 0.555 to 0.593. At 0.62 the
+ * headroom above was 0.008 - one ordinary payments question away from being
+ * refused. Raising to 0.63-0.65 would have refused three of the twenty
+ * in-domain queries outright.
  *
- * The previous value of 0.48 sat BELOW the noise band: 5 of 6 noise queries
- * cleared it, including the string "zxqv plorbnat weffle grimsby" at 0.544.
- * The grounding gate in rag.service.ts was therefore correct but almost never
- * reached, and the system prompt's domain classifier was doing the real work -
- * which is precisely the prompt-as-guardrail pattern the gate exists to avoid.
+ * THE MARGIN IS THIN AND THAT IS THE REAL FINDING. A 0.035 gap between two
+ * 20-sample populations is not a comfortable separation. The two bands are
+ * close enough that a single scalar threshold is a weak instrument here, and a
+ * genuinely robust system would add a second signal - a reranker, a keyword
+ * check, or a model-side relevance judgement on the retrieved chunks. That is
+ * recorded as a limitation rather than papered over, because the numbers do not
+ * support claiming more.
  *
- * MEASURED, NOT PROVEN. n=8 and n=6 are small. Re-run `npm run calibrate` after
- * any corpus or embedding-model change, and widen
- * evaluation/stripe_questions.json before treating this number as settled.
+ * MEASURED, NOT PROVEN. Re-run `npm run calibrate` after any corpus or
+ * embedding-model change. Both samples are hand-written and n=20; they bound
+ * the problem, they do not settle it.
  */
-export const MATCH_THRESHOLD = 0.62;
+export const MATCH_THRESHOLD = 0.61;
 
 /** Maximum chunks retrieved per query. */
 export const MATCH_COUNT = 6;

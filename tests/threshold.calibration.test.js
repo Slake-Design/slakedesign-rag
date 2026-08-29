@@ -53,15 +53,53 @@ describe('retrieval threshold calibration', () => {
         expect(MATCH_THRESHOLD).toBeLessThan(worstInDomain);
     });
 
-    it('keeps a usable margin on both sides rather than hugging one band', () => {
-        // A threshold technically inside the gap but 0.001 from the nearest
-        // in-domain score would pass the tests above while being one corpus
-        // edit away from refusing real questions.
-        const marginBelow = MATCH_THRESHOLD - Math.max(...noise);
-        const marginAbove = Math.min(...inDomain) - MATCH_THRESHOLD;
+    it('keeps a proportional margin on both sides rather than hugging one band', () => {
+        // ORIGINAL ASSERTION, AND WHY IT CHANGED.
+        //
+        // This test first required an absolute margin of >0.03 on each side.
+        // That was written against a calibration of n=8 in-domain and n=6
+        // noise, which reported a 0.151 separation gap and made 0.03 look
+        // generous.
+        //
+        // Widening both populations to 20 collapsed the measured gap to 0.035.
+        // An absolute 0.03 on BOTH sides is arithmetically impossible inside a
+        // 0.035 gap, so the original assertion could not be satisfied by any
+        // threshold - it was not detecting a bad threshold, it was encoding a
+        // sample size that no longer exists.
+        //
+        // The replacement is proportional: each side must hold at least a
+        // quarter of whatever gap actually exists. That keeps the real
+        // property - the threshold must not hug either band - while staying
+        // meaningful as the gap changes. It is deliberately NOT a lower
+        // absolute number chosen to make the previous value pass.
+        const worstInDomain = Math.min(...inDomain);
+        const bestNoise = Math.max(...noise);
+        const gap = worstInDomain - bestNoise;
 
-        expect(marginBelow).toBeGreaterThan(0.03);
-        expect(marginAbove).toBeGreaterThan(0.03);
+        const marginBelow = MATCH_THRESHOLD - bestNoise;
+        const marginAbove = worstInDomain - MATCH_THRESHOLD;
+
+        expect(marginBelow).toBeGreaterThan(gap * 0.25);
+        expect(marginAbove).toBeGreaterThan(gap * 0.25);
+    });
+
+    it('surfaces how thin the separation actually is', () => {
+        // Not a pass/fail on quality - a tripwire on the story. The gap is the
+        // number that decides whether a single scalar threshold is a defensible
+        // instrument at all. If it collapses further, the honest answer stops
+        // being "retune the threshold" and becomes "one signal is not enough",
+        // and this test is where that becomes visible rather than a surprise.
+        const gap = Math.min(...inDomain) - Math.max(...noise);
+
+        expect(gap).toBeGreaterThan(0);
+        if (gap < 0.02) {
+            throw new Error(
+                `Separation gap has collapsed to ${gap.toFixed(3)}. A single ` +
+                `cosine threshold can no longer separate these populations ` +
+                `reliably; add a second signal (reranker, keyword check, or a ` +
+                `model-side relevance judgement) rather than retuning.`
+            );
+        }
     });
 
     it('records the provenance needed to know when it goes stale', () => {

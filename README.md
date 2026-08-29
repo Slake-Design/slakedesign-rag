@@ -16,18 +16,20 @@ Designed for recruiters and engineering managers reviewing in 3-5 minutes:
 * **Decoupled Service Architecture**: Separates Express HTTP/SSE transport controllers (`routes/`) from the core AI workflow (`src/services/rag.service.js`) and database operations (`src/repositories/`).
 * **Dependency-Injected Test Design**: Utilizes constructor-based injection in `RagService` to mock external database and LLM APIs cleanly, ensuring automated tests (`npm test`) run isolated and cost-free.
 * **Production-Style Safety Controls**: Implements IP-based rate limiting to prevent API budget drain and sanitised error outputs.
-* **Typed End-to-End**: The request path — config, repositories, services, routes, entry point — is TypeScript under `strict` with `noUncheckedIndexedAccess`, and the HTTP boundary is validated with Zod. The retrieval contract (`RetrievedChunk`, `Source`, `GeminiModels`) is declared rather than inferred from whatever the SDK happened to return.
-* **Correlated Structured Logging**: Pino with an `AsyncLocalStorage` mixin, so every line of a request — retrieval, budget pruning, refusal-or-answer, completion — carries one `x-correlation-id`. SSE streams interleave, so this is what makes a single request's logs reassemblable.
+* **Typed End-to-End**: The request path (config, repositories, services, routes, entry point) is TypeScript under `strict` with `noUncheckedIndexedAccess`, and the HTTP boundary is validated with Zod. The retrieval contract (`RetrievedChunk`, `Source`, `GeminiModels`) is declared rather than inferred from whatever the SDK happened to return.
+* **Correlated Structured Logging**: Pino with an `AsyncLocalStorage` mixin, so every line of a request (retrieval, budget pruning, refusal-or-answer, completion) carries one `x-correlation-id`. SSE streams interleave, so this is what makes a single request's logs reassemblable.
 
 ### Public access policy
 
-`POST /query` is intentionally open to any origin (`Access-Control-Allow-Origin: *`). The
-endpoint is read-only: it performs retrieval and generation, stores nothing, mutates
-nothing, and holds no user data. It is called directly from the browser by the demo at
-slakedesign.com and by Netlify deploy previews, whose subdomains change per pull request,
-so an origin allowlist would break previews without reducing risk — CORS does not
-restrict server-side callers. The real control on abuse is the rate limit: **10 requests
-per hour per IP**, enforced by `express-rate-limit` in `index.js`.
+`POST /query` is intentionally open to any origin
+(`Access-Control-Allow-Origin: *`). The endpoint is read-only: it performs
+retrieval and generation, stores nothing, mutates nothing, and holds no user
+data. It is called directly from the browser by the demo at slakedesign.com
+and by Netlify deploy previews, whose subdomains change per pull request, so
+an origin allowlist would break previews without reducing risk; CORS does not
+restrict server-side callers. The real control on abuse is the rate limit:
+**10 requests per hour per IP**, enforced by `express-rate-limit` in
+`index.js`.
 
 ---
 
@@ -50,7 +52,7 @@ This RAG engine resolves these issues by anchoring Gemini responses in verified 
   - *"What endpoint and parameters are used to create a PaymentIntent?"*
 * **RAG Capabilities Demonstrated**:
   - **Semantic Retrieval**: Fetches relevant context matching the question's intent.
-  - **Grounded Responses**: The model is never called without retrieved context. If no chunk clears the similarity threshold — or everything retrieved is pruned by the token budget — the service returns a refusal and stops, rather than letting the model answer from its own priors. Enforced in `src/services/rag.service.js` (grounding gate) and covered by `tests/query.test.js`.
+  - **Grounded Responses**: The model is never called without retrieved context. If no chunk clears the similarity threshold (or everything retrieved is pruned by the token budget) the service returns a refusal and stops, rather than letting the model answer from its own priors. Enforced in `src/services/rag.service.js` (grounding gate) and covered by `tests/query.test.js`.
   - **Incremental Streaming**: Renders response chunks as they generate using SSE.
   - **Verifiable Citations**: Returns database IDs, URLs, and similarity scores.
 
@@ -183,8 +185,8 @@ cosine similarity:
 
 | Population | n | Range |
 |---|---|---|
-| In-domain (8 from `evaluation/stripe_questions.json` + 12 calibration-only) | 20 | 0.628 – 0.816 |
-| Noise (3 gibberish, 9 unrelated-but-fluent, 8 adjacent-technical/financial) | 20 | 0.452 – 0.593 |
+| In-domain (8 from `evaluation/stripe_questions.json` + 12 calibration-only) | 20 | 0.628 to 0.816 |
+| Noise (3 gibberish, 9 unrelated-but-fluent, 8 adjacent-technical/financial) | 20 | 0.452 to 0.593 |
 
 Separation gap: **0.035**. Configured value: **0.61**, just below the midpoint
 of 0.611, biasing the margin toward retaining real questions. Verified:
@@ -194,18 +196,19 @@ of 0.611, biasing the margin toward retaining real questions. Verified:
 used n=8 in-domain and n=6 noise and reported a gap of 0.151, which suggested
 the threshold could safely rise toward 0.65. That was an artifact of a small,
 easy sample. Widening both populations to 20 dropped the weakest in-domain
-score from 0.706 to 0.628 and raised the noise ceiling from 0.555 to 0.593 —
-so the direction of the correct adjustment was **down, not up**. Raising to
-0.63–0.65 would have refused three of the twenty in-domain queries outright.
+score from 0.706 to 0.628 and raised the noise ceiling from 0.555 to 0.593, so
+the direction of the correct adjustment was **down, not up**. Raising to 0.63
+to 0.65 would have refused three of the twenty in-domain queries outright.
 
 **What this means for the design.** A 0.035 gap between two 20-sample
 populations is not a comfortable separation. A single scalar cosine threshold
 is a weak instrument at this margin, and a genuinely robust system would add a
-second signal — a reranker, a keyword check, or a model-side relevance
+second signal: a reranker, a keyword check, or a model-side relevance
 judgement over the retrieved chunks. That is recorded here rather than papered
-over, because the numbers do not support claiming more. `tests/threshold.calibration.test.js`
-fails deliberately if the gap collapses below 0.02, so the point at which
-retuning stops being the right answer is visible rather than a surprise.
+over, because the numbers do not support claiming more.
+`tests/threshold.calibration.test.js` fails deliberately if the gap collapses
+below 0.02, so the point at which retuning stops being the right answer is
+visible rather than a surprise.
 
 Reproduce with:
 
@@ -215,11 +218,11 @@ npm run calibrate -- --write # also update evaluation/threshold-calibration.json
 ```
 
 It needs an API key and is deliberately not part of `npm test`. It refuses to
-write a partial run: a transient API failure used to shrink the sample silently
-and record the reduced count as if it were intended. The committed measurement
-lives in `evaluation/threshold-calibration.json`, and
+write a partial run: a transient API failure used to shrink the sample
+silently and record the reduced count as if it were intended. The committed
+measurement lives in `evaluation/threshold-calibration.json`, and
 `tests/threshold.calibration.test.js` asserts the configured threshold still
-separates those bands — so a change that reintroduces overlap fails in CI
+separates those bands, so a change that reintroduces overlap fails in CI
 without needing a key.
 
 **Measured, not proven.** Both samples are hand-written at n=20. They bound the
@@ -230,7 +233,7 @@ change.
 
 ## 5c. Design & Reliability Notes
 
-**Production-shaped.** The model is never called without retrieved context — a
+**Production-shaped.** The model is never called without retrieved context; a
 question that retrieves nothing above threshold is refused, not answered from
 priors, and that is enforced in code and covered by tests verified to fail
 against the pre-fix service. TypeScript under `strict` with Zod at the HTTP
@@ -241,21 +244,21 @@ dimension-mismatched corpus kills the process at boot rather than producing a
 service that reports healthy and retrieves nothing.
 
 **Demo-only, and why.** The vector store is an in-memory O(n) cosine scan over
-650 documents — deliberate, because the corpus ships with the deploy and needs
+650 documents, deliberate, because the corpus ships with the deploy and needs
 no external database or cold start. It does not scale, and that is the trade
 being made. Rate limiting is in-process. The evaluation set is 8 questions:
 enough to catch a regression, not enough to claim a quality figure.
 
 **What was fixed, and what it taught me.** See [HARDENING.md](HARDENING.md).
-The defect was that a Stripe question retrieving nothing still got a confident,
-fully-structured answer built from model priors — with citations suppressed, so
-it looked identical to a grounded one. The lesson that generalised: the system
-prompt said the model MUST produce the full structure for in-domain questions,
-and that instruction quietly overrode a `[No relevant documents found]`
-placeholder that looked like a safeguard. A prompt is not a guardrail. If a
-property must hold, it has to be enforced in code and tested — which is why the
-regression tests assert the model is never *called*, not merely that the output
-looks right.
+The defect was that a Stripe question retrieving nothing still got a
+confident, fully-structured answer built from model priors (with citations
+suppressed, so it looked identical to a grounded one. The lesson that
+generalised: the system prompt said the model MUST produce the full structure
+for in-domain questions, and that instruction quietly overrode a `[No relevant
+documents found]` placeholder that looked like a safeguard. A prompt is not a
+guardrail. If a property must hold, it has to be enforced in code and tested),
+which is why the regression tests assert the model is never *called*, not
+merely that the output looks right.
 
 ---
 
@@ -264,10 +267,10 @@ looks right.
 To demonstrate software engineering maturity, the project documents its trade-offs and future scaling considerations:
 * **Evaluation Scope**: The retrieval evaluation dataset is currently small (8 questions). Production deployment would require expanding the dataset to 100+ multi-turn scenarios to verify retrieval quality at scale.
 * **Retrieval Experiments**: Retrieval accuracy (currently 75%) could be optimized in the future by running comparative evaluation runs with the new recursive chunker (`src/ingestion/chunker.js`) or adding a BM25 keyword search layer.
-* **The in-domain and noise score bands nearly touch**: at n=20 each, the separation is only 0.035 (in-domain 0.628–0.816, noise 0.452–0.593). `MATCH_THRESHOLD = 0.61` classifies all 40 correctly, but with ~0.017 of margin on either side. A single cosine threshold is a weak instrument at that margin; a reranker or keyword layer is the real fix, and is not implemented. Re-run `npm run calibrate` after any corpus or embedding-model change.
+* **The in-domain and noise score bands nearly touch**: at n=20 each, the separation is only 0.035 (in-domain 0.628 to 0.816, noise 0.452 to 0.593). `MATCH_THRESHOLD = 0.61` classifies all 40 correctly, but with ~0.017 of margin on either side. A single cosine threshold is a weak instrument at that margin; a reranker or keyword layer is the real fix, and is not implemented. Re-run `npm run calibrate` after any corpus or embedding-model change.
 * **In-Memory Rate Limiting**: The IP-based rate limiting is held in Node.js process memory. While appropriate for a single-instance portfolio demo, a production environment with multiple auto-scaling containers would require a distributed key store like Redis.
 * **Observability Depth**: Structured logging and correlation IDs are in place (`src/logging/`), and every request's outcome is logged as a queryable field (`answered`, `out_of_domain_refusal`, `refused_ungrounded`). A full deployment would add distributed tracing across service boundaries and per-request token-cost accounting, neither of which a single-service demo can demonstrate honestly.
-* **Retrieval precision is the binding constraint**: because the model is never called without grounding, an in-domain question whose best match falls under `MATCH_THRESHOLD` is refused rather than answered. That is the intended trade-off — a wrong-but-confident answer costs more than a decline — but it makes threshold tuning and corpus coverage the limiting factor on usefulness, rather than the model.
+* **Retrieval precision is the binding constraint**: because the model is never called without grounding, an in-domain question whose best match falls under `MATCH_THRESHOLD` is refused rather than answered. That is the intended trade-off (a wrong-but-confident answer costs more than a decline), but it makes threshold tuning and corpus coverage the limiting factor on usefulness, rather than the model.
 
 ---
 
@@ -305,7 +308,7 @@ into memory once at boot and never writes back, and the host filesystem is ephem
 HTTP upload would be lost on the next deploy.
 
 ```bash
-# Preview what would be ingested — makes no Gemini calls and writes nothing
+# Preview what would be ingested: makes no Gemini calls and writes nothing
 npm run ingest:dry -- --spec
 npm run ingest:dry -- --urls
 

@@ -90,10 +90,12 @@ version kept serving throughout.
 
 Introduced by the P5/P7 work deployed 2026-08-28:
 
-- **Questions scoring between `0.48` and `0.62` are now refused.**
-  `MATCH_THRESHOLD` was raised after measuring that the old value sat *below*
-  the noise band — see the calibration section in `README.md`. Realistic
-  payments questions score `0.706`–`0.816` and are unaffected.
+- **Questions scoring below `MATCH_THRESHOLD` (0.61) are refused.** The
+  threshold was raised from `0.48`, which sat *below* the noise band. It was
+  briefly `0.62`, then corrected down to `0.61` when a wider calibration sample
+  (n=20 in-domain, n=20 noise) showed the weakest in-domain score was `0.628`,
+  not `0.706` — see the calibration section in `README.md`. In-domain queries
+  span `0.628`–`0.816`; noise spans `0.452`–`0.593`.
 - **A question that retrieves nothing is refused without calling the model.**
   It returns `NO_CONTEXT_TEXT` and emits no `sources`. The demo page already
   handled a sources-less response (the out-of-domain path), so no frontend

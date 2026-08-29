@@ -62,54 +62,68 @@ limitations section, not buried.
 
 Found while verifying the demo before pushing, not during the original audit.
 
-The grounding gate above only helps when retrieval actually returns nothing. It
-turned out that almost nothing was rejected: `MATCH_THRESHOLD` was `0.48`, and
-measurement showed the noise band reaching **0.555**.
+The grounding gate only helps when retrieval actually returns nothing. It turned
+out almost nothing was rejected: `MATCH_THRESHOLD` was `0.48`, and measurement
+showed the noise band reaching **0.555**. Five of six noise queries cleared it —
+including `"zxqv plorbnat weffle grimsby"` at 0.544. Every query retrieved the
+full six chunks.
 
-| Population | n | Top-1 cosine similarity |
-|---|---|---|
-| In-domain (`evaluation/stripe_questions.json`) | 8 | 0.706 – 0.816 |
-| Noise (gibberish + off-topic) | 6 | 0.473 – 0.555 |
-
-Five of six noise queries cleared `0.48` — including `"zxqv plorbnat weffle
-grimsby"` at 0.544 and a Monty Python question at 0.506. Every query retrieved
-the full six chunks.
-
-So the system *was* behaving correctly in live testing — out-of-domain questions
+The system *was* behaving correctly in live testing — out-of-domain questions
 were refused — but by the **system prompt's domain classifier**, not by the
-code. Which is exactly the pattern the gate was built to replace: a prompt is
-not a guardrail. The gate was real, tested, and decorative.
+code. Exactly the pattern the gate was built to replace: a prompt is not a
+guardrail. The gate was real, tested, and decorative.
 
-The two bands are cleanly separated (gap 0.151), so this was fixable rather than
-merely reportable. The threshold is now **0.62**, slightly below the exact
-midpoint of 0.631 to bias margin toward retaining real questions. Verified live:
-all six realistic payments questions still answer with sources; all three noise
-queries now hit the code-level gate, logging
-`outcome=refused_ungrounded cause=nothing_above_threshold retrievedChunks=0`
-with the model never called.
+## Then the calibration that fixed it turned out to be too small
 
-**Three related defects fell out of the same change:**
+The first fix raised the threshold to `0.62`, justified by a measured separation
+gap of 0.151 between in-domain (n=8) and noise (n=6). That number did not
+survive a bigger sample.
 
-- The threshold existed as **three different literals** — `0.48` in the service,
-  `0.48` duplicated in `evaluation/evaluate.js`, and `0.45` as the repository's
-  parameter default. The evaluation harness could therefore report retrieval
-  quality for a threshold production did not use. It is now a single exported
-  constant.
-- `evaluate.js` and the new calibration script both did
-  `require('../src/repositories/document.repository')` and called
-  `.matchDocuments` on the result. After the TypeScript port that module has
-  both a default and named exports, so the require returns the namespace and the
-  method is `undefined` — failing at first call rather than at import. The
-  evaluation harness was broken and it had not shown up, because the earlier
-  test run failed on an invalid API key before reaching that line.
-- A test asserted the literal `0.48` was passed to retrieval. It now reads the
-  constant, so a threshold change is a deliberate calibration decision rather
-  than a test quietly disagreeing with production.
+Widening both populations to **20 each** — and deliberately including the hard
+cases, fluent English about unrelated subjects and adjacent technical/financial
+questions rather than only gibberish — produced:
 
-**Honest limits.** n=8 and n=6 are small samples. The bands are well separated
-and the result is stable, but this is *measured, not proven*. `npm run
-calibrate` reproduces it, and the README records that the eval set should be
-widened before the number is treated as settled.
+| Population | n=8 / n=6 (first pass) | **n=20 / n=20** |
+|---|---|---|
+| In-domain range | 0.706 – 0.816 | **0.628** – 0.816 |
+| Noise range | 0.473 – 0.555 | 0.452 – **0.593** |
+| Separation gap | 0.151 | **0.035** |
+
+The weakest in-domain score fell by 0.078 and the noise ceiling rose by 0.038.
+At `0.62` the headroom above had shrunk to **0.008** — one ordinary payments
+question away from being refused.
+
+**The correct adjustment was down, not up.** The obvious reading of the first
+calibration was that the threshold could safely rise toward 0.65; the wider
+sample shows that would have refused three of the twenty in-domain queries
+outright. It is now **0.61**, just under the midpoint of 0.611, biasing the
+remaining margin toward retaining real questions. Verified: 0/20 noise
+admitted, 0/20 in-domain refused.
+
+**The real finding is that the margin is thin.** A 0.035 gap between two
+20-sample populations is not a comfortable separation, and a single scalar
+cosine threshold is a weak instrument at that margin. A robust system would add
+a second signal — a reranker, a keyword check, or a model-side relevance
+judgement over the retrieved chunks. That is not implemented, and the README
+says so rather than implying the threshold settles the question.
+
+**Two pieces of tooling honesty came out of the same pass:**
+
+- `tests/threshold.calibration.test.js` originally asserted an absolute margin
+  of >0.03 on each side. Inside a 0.035 gap that is arithmetically impossible,
+  so the assertion was not detecting a bad threshold — it was encoding a sample
+  size that no longer existed. It is now proportional (each side must hold a
+  quarter of whatever gap exists), plus a tripwire that fails outright if the
+  gap collapses below 0.02, at which point the honest answer stops being
+  "retune" and becomes "one signal is not enough". The replacement is
+  deliberately not a smaller absolute number picked to make the old value pass.
+- `npm run calibrate` used to log and skip a query that errored, silently
+  shrinking the sample — and `--write` then recorded the reduced count as though
+  it were intended. It caught a real 503 from the embedding API during this
+  work and wrote `n: 19`. It now counts failures, warns, and refuses to write a
+  partial run. A calibration file claiming a sample size it did not measure is
+  the same defect class as a README claiming a guarantee the code does not
+  enforce.
 
 ---
 
@@ -260,6 +274,10 @@ it:
  "retrievedChunks":0,"includedChunks":0,"threshold":0.62,
  "cause":"nothing_above_threshold","msg":"Refused ungrounded answer; model was not called"}
 ```
+
+That line is quoted verbatim from the 2026-08-28 rollout, so it shows
+`threshold: 0.62` — the value live at the time. The configured value is now
+`0.61`; see the calibration section above for why it moved.
 
 **What to monitor.** The ratio of `outcome=refused_ungrounded` to
 `outcome=answered` is the number that matters. It was ~0 before this deploy

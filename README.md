@@ -262,15 +262,103 @@ merely that the output looks right.
 
 ---
 
-## 6. Known Limitations & Future Improvements
+## 6. Architectural Trade-offs & Future Work
 
-To demonstrate software engineering maturity, the project documents its trade-offs and future scaling considerations:
-* **Evaluation Scope**: The retrieval evaluation dataset is currently small (8 questions). Production deployment would require expanding the dataset to 100+ multi-turn scenarios to verify retrieval quality at scale.
-* **Retrieval Experiments**: Retrieval accuracy (currently 75%) could be optimized in the future by running comparative evaluation runs with the new recursive chunker (`src/ingestion/chunker.js`) or adding a BM25 keyword search layer.
-* **The in-domain and noise score bands nearly touch**: at n=20 each, the separation is only 0.035 (in-domain 0.628 to 0.816, noise 0.452 to 0.593). `MATCH_THRESHOLD = 0.61` classifies all 40 correctly, but with ~0.017 of margin on either side. A single cosine threshold is a weak instrument at that margin; a reranker or keyword layer is the real fix, and is not implemented. Re-run `npm run calibrate` after any corpus or embedding-model change.
-* **In-Memory Rate Limiting**: The IP-based rate limiting is held in Node.js process memory. While appropriate for a single-instance portfolio demo, a production environment with multiple auto-scaling containers would require a distributed key store like Redis.
-* **Observability Depth**: Structured logging and correlation IDs are in place (`src/logging/`), and every request's outcome is logged as a queryable field (`answered`, `out_of_domain_refusal`, `refused_ungrounded`). A full deployment would add distributed tracing across service boundaries and per-request token-cost accounting, neither of which a single-service demo can demonstrate honestly.
-* **Retrieval precision is the binding constraint**: because the model is never called without grounding, an in-domain question whose best match falls under `MATCH_THRESHOLD` is refused rather than answered. That is the intended trade-off (a wrong-but-confident answer costs more than a decline), but it makes threshold tuning and corpus coverage the limiting factor on usefulness, rather than the model.
+Two categories, kept separate on purpose. The first are choices made knowingly,
+with a reason and a path forward. The second are gaps: things that are simply
+not done. Presenting the second group as though it were the first would be the
+same dishonesty this project spent its hardening pass removing.
+
+### Deliberate trade-offs
+
+* **In-memory vector store.** The 650-document corpus ships with the deploy and
+  is scanned linearly per query. Chosen so the service has no external database
+  dependency and no cold-start pause, which is what lets a portfolio demo answer
+  a recruiter's first question in a few seconds rather than waking a suspended
+  instance.
+
+  Measured on the deployment's own hardware profile, 25 queries per size, real
+  vector copies rather than aliased references:
+
+  | Documents | p50 | p95 | Heap used |
+  |---:|---:|---:|---:|
+  | 650 (current) | 2.1 ms | 2.4 ms | 61 MB |
+  | 2,600 | 9.0 ms | 10.3 ms | 101 MB |
+  | 6,500 | 22.2 ms | 23.8 ms | 193 MB |
+  | 13,000 | 43.5 ms | 80.7 ms | 346 MB |
+
+  Scan cost is linear, about 3.3 microseconds per document per query, exactly as
+  an O(n) scan should behave.
+
+  **Latency is not the ceiling, and it is worth being precise about why.** Even
+  at 13,000 documents the p95 scan is 80.7 ms against a generation call of
+  several seconds, so search is roughly 1.6% of the response a user waits for.
+  There is no corpus size this design would plausibly hold at which a latency
+  budget becomes the binding constraint. **Memory is the ceiling**: heap reaches
+  346 MB at 13,000 documents, and this runs on a Render starter instance capped
+  at 512 MB. The migration trigger is therefore corpus size against instance
+  memory, somewhere near 13,000 documents on the current plan, not a
+  query-latency threshold.
+
+  `pgvector` or Qdrant is the next step, and the reason is worth stating
+  precisely, because the obvious phrasing is wrong. The benefit is **not** an
+  ANN index such as HNSW: HNSW attacks query cost, reducing an O(n) scan to
+  roughly O(log n), and query cost is the thing measured above as negligible.
+  HNSW would in fact *increase* memory, since the navigable graph sits on top of
+  the vectors it indexes. The benefit is that a vector database holds the
+  vectors in its own storage rather than in this process's heap, which is the
+  constraint that actually binds. An index would become worthwhile later, at a
+  corpus size this design would never reach in-process anyway.
+
+  The repository sits behind an `IDocumentRepository` interface, so that swap
+  does not reach the service layer.
+
+* **Refusing rather than guessing.** A question whose best match falls under
+  `MATCH_THRESHOLD` is refused, not answered. A wrong-but-confident answer costs
+  more than a decline, so this is the intended posture. The consequence is that
+  retrieval precision and corpus coverage, not the model, are the limiting
+  factor on usefulness.
+
+* **In-process rate limiting.** Held in Node memory, which is correct for a
+  single instance and wrong the moment there are two. A distributed store such
+  as Redis is the fix, and is not needed until this scales horizontally.
+
+* **Simulated nothing.** Every number this service reports is measured. Where a
+  capability is absent it is listed below rather than approximated.
+
+### Known gaps
+
+* **The score bands nearly touch.** At n=20 each the separation is 0.035
+  (in-domain 0.628 to 0.816, noise 0.452 to 0.593). `MATCH_THRESHOLD = 0.61`
+  classifies all 40 correctly, but with roughly 0.017 of margin either side.
+  This is not a trade-off anyone chose; it is what measurement returned. A
+  single cosine threshold is a weak instrument at that margin, and the real fix
+  is a second signal: a reranker, a keyword layer, or a model-side relevance
+  judgement over the retrieved chunks. It is not implemented.
+  `tests/threshold.calibration.test.js` fails deliberately if the gap falls
+  below 0.02, so the point at which retuning stops being the right answer is
+  visible rather than a surprise.
+
+* **The evaluation set is 8 questions**, with a 75% retrieval hit rate. That is
+  enough to catch a regression and not enough to claim a quality figure.
+  Calibration uses a wider sample (20 in-domain, 20 noise) but both are
+  hand-written, so they bound the problem rather than settling it.
+
+* **Corpus provenance is incomplete.** `corpus.meta.json` records
+  `embeddingModel: null` because the model that produced the committed vectors
+  was not captured at ingest time and cannot be recovered. Dimension *is*
+  measured and is what the boot and query gates enforce, so a model swap that
+  changes width fails loudly; a same-width swap would not be caught. This is a
+  past mistake preserved honestly, not a design decision.
+
+* **The recursive chunker is not wired in.** Adopting it requires re-indexing
+  the corpus and re-running the evaluation against the existing baseline.
+
+* **Observability stops at this service.** Structured logging and correlation
+  IDs are in place (`src/logging/`), and every request's outcome is a queryable
+  field (`answered`, `out_of_domain_refusal`, `refused_ungrounded`). Distributed
+  tracing across service boundaries and per-request token-cost accounting are
+  not implemented, and a single-service demo cannot honestly demonstrate them.
 
 ---
 

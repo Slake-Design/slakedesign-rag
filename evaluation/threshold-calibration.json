@@ -1,25 +1,81 @@
 {
-  "measuredAt": "2026-08-28",
+  "measuredAt": "2026-08-29",
   "embeddingModel": "models/gemini-embedding-001",
   "dimensions": 3072,
   "corpusDocumentCount": 650,
   "metric": "top-1 cosine similarity against the committed corpus",
-  "note": "Regenerate with `npm run calibrate`. These are real measurements, not fixtures invented to fit the threshold. tests/threshold.calibration.test.js asserts MATCH_THRESHOLD separates the two bands below, so a future threshold change that reintroduces overlap fails in CI without needing an API key.",
+  "note": "Regenerate with `npm run calibrate -- --write`.",
   "inDomain": {
     "source": "evaluation/stripe_questions.json",
-    "n": 8,
-    "topSimilarity": [0.706, 0.716, 0.717, 0.752, 0.754, 0.769, 0.776, 0.816]
+    "n": 20,
+    "topSimilarity": [
+      0.628,
+      0.646,
+      0.65,
+      0.669,
+      0.677,
+      0.686,
+      0.687,
+      0.695,
+      0.706,
+      0.716,
+      0.717,
+      0.744,
+      0.745,
+      0.752,
+      0.754,
+      0.769,
+      0.771,
+      0.776,
+      0.797,
+      0.816
+    ]
   },
   "noise": {
-    "n": 6,
+    "n": 20,
     "queries": [
       "zxqv plorbnat weffle grimsby",
       "asdkjh asdkjh asdkjh",
+      "qqqq wwww eeee rrrr tttt",
       "What is the airspeed velocity of an unladen swallow?",
       "What is the distance to the moon?",
       "Who won the NBA finals in 1998?",
-      "Recipe for sourdough starter"
+      "Recipe for sourdough starter",
+      "How do I change the oil in a 2015 Honda Civic?",
+      "What are the health benefits of intermittent fasting?",
+      "Explain the causes of the French Revolution",
+      "How do I train a puppy to stop barking?",
+      "What is the best fertiliser for tomato plants?",
+      "How do I configure a Kubernetes horizontal pod autoscaler?",
+      "What is the difference between TCP and UDP?",
+      "How do I write a recursive CTE in PostgreSQL?",
+      "What is the current price of Bitcoin?",
+      "How do I file a personal tax return in the UK?",
+      "What is double-entry bookkeeping?",
+      "How does the SWIFT network route interbank messages?",
+      "What is a good asset allocation for a retirement portfolio?"
     ],
-    "topSimilarity": [0.473, 0.500, 0.506, 0.518, 0.544, 0.555]
+    "topSimilarity": [
+      0.452,
+      0.473,
+      0.486,
+      0.491,
+      0.498,
+      0.5,
+      0.501,
+      0.506,
+      0.507,
+      0.518,
+      0.522,
+      0.53,
+      0.534,
+      0.543,
+      0.544,
+      0.549,
+      0.555,
+      0.563,
+      0.568,
+      0.593
+    ]
   }
 }
